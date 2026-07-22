@@ -1,0 +1,47 @@
+"""CSV / TSV Agent (L2) — pandas-based ingest with schema profiling."""
+import asyncio
+import logging
+
+import pandas as pd
+
+from app.models.schemas import FileCategory, ParsedDocument, TableBlock, TextBlock
+from app.parsers.base import BaseParser
+
+logger = logging.getLogger(__name__)
+
+MAX_PREVIEW_ROWS = 500
+
+
+class CSVParser(BaseParser):
+    category = FileCategory.CSV
+
+    async def parse(self, file_path: str) -> ParsedDocument:
+        return await asyncio.to_thread(self._parse_sync, file_path)
+
+    def _parse_sync(self, file_path: str) -> ParsedDocument:
+        doc = ParsedDocument(source_file=file_path, category=self.category)
+        try:
+            sep = "\t" if file_path.lower().endswith(".tsv") else None
+            df = pd.read_csv(file_path, sep=sep, engine="python", on_bad_lines="warn")
+
+            profile_lines = [f"Rows: {len(df)}, Columns: {len(df.columns)}"]
+            for col in df.columns:
+                null_pct = df[col].isna().mean() * 100
+                dtype = str(df[col].dtype)
+                profile_lines.append(
+                    f"Column '{col}': dtype={dtype}, nulls={null_pct:.1f}%, "
+                    f"unique={df[col].nunique(dropna=True)}"
+                )
+            doc.text_blocks.append(TextBlock(text="\n".join(profile_lines), kind="paragraph"))
+
+            preview = df.head(MAX_PREVIEW_ROWS).fillna("").astype(str)
+            doc.tables.append(TableBlock(
+                headers=list(preview.columns),
+                rows=preview.values.tolist(),
+                caption="Preview" if len(df) > MAX_PREVIEW_ROWS else "Full data",
+            ))
+            doc.metadata = {"row_count": len(df), "column_count": len(df.columns), "parser": "pandas"}
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("CSV parse failed on %s", file_path)
+            doc.warnings.append(f"CSV parse error: {exc}")
+        return doc
