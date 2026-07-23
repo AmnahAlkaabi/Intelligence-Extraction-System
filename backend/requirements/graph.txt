@@ -1,0 +1,2 @@
+# Graph store
+neo4j==5.27.0

@@ -1,38 +1,16 @@
-fastapi==0.115.6
-uvicorn[standard]==0.34.0
-python-multipart==0.0.20
-pydantic==2.10.4
-pydantic-settings==2.7.1
-
-# LLM client (OpenAI-compatible, points at on-prem Qwen/Kimi2 endpoints)
-openai==1.59.6
-
-# Embeddings
-sentence-transformers==3.3.1
-# torch is intentionally NOT pinned here -- install the CPU-only build
+# Aggregates the grouped files under requirements/ so local dev can still
+# run a single `pip install -r requirements.txt`. The Docker build installs
+# each group in its own layer instead (see Dockerfile) so a mid-install
+# failure only costs a retry of that one group, not the whole set.
+#
+# torch/torchvision are NOT included here -- install the CPU-only build
 # first (avoids pulling several GB of unused NVIDIA CUDA packages):
-#   pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
-# then this file. See backend/Dockerfile, which does exactly that.
-
-# Graph store
-neo4j==5.27.0
-
-# PDF parsing (Docling for layout/tables + RapidOCR — an ONNX deployment of
-# PaddleOCR's detection/recognition models — as its scanned-page OCR engine;
-# RapidOCR's default models ship inside the wheel, so no model download step
-# is needed even on a cold air-gapped start)
-docling==2.15.1
-rapidocr-onnxruntime==1.4.4
-onnxruntime==1.20.1
-
-# Image OCR (standalone image uploads, not part of the PDF pipeline above)
-pytesseract==0.3.13
-Pillow==11.0.0
-
-# Structured data
-pandas==2.2.3
-openpyxl==3.1.5
-xlrd==2.0.1
-
-# Utilities
-python-dotenv==1.0.1
+#   pip install torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cpu
+-r requirements/core.txt
+-r requirements/llm.txt
+-r requirements/embeddings.txt
+-r requirements/graph.txt
+-r requirements/pdf.txt
+-r requirements/ocr.txt
+-r requirements/data.txt
+-r requirements/utils.txt

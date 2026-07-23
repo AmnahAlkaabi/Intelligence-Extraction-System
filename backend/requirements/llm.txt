@@ -1,0 +1,2 @@
+# LLM client (OpenAI-compatible, points at on-prem Qwen/Kimi2 endpoints)
+openai==1.59.6

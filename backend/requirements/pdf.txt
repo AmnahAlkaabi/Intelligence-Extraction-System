@@ -1,0 +1,10 @@
+# PDF parsing (Docling for layout/tables + RapidOCR -- an ONNX deployment of
+# PaddleOCR's detection/recognition models -- as its scanned-page OCR engine;
+# RapidOCR's default models ship inside the wheel, so no model download step
+# is needed even on a cold air-gapped start). This is the largest/slowest
+# group to install (docling pulls in a sizeable transitive dependency tree),
+# kept in its own layer so a failure here doesn't force re-downloading
+# everything else too.
+docling==2.15.1
+rapidocr-onnxruntime==1.4.4
+onnxruntime==1.20.1

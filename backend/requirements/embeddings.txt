@@ -1,0 +1,3 @@
+# torch/torchvision are installed separately from the CPU wheel index --
+# see backend/Dockerfile -- so they're intentionally not listed here.
+sentence-transformers==3.3.1

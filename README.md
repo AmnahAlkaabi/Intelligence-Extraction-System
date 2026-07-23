@@ -146,6 +146,40 @@ If you're not sure whether this applies to you, the safest check is: does
 certificate error specifically (not a timeout)? That combination points
 directly at this.
 
+### If pip reports hash mismatches ("packages do not match the hashes")
+
+This is a step further than the certificate issue above: the connection is
+trusted, but the *file contents* that arrive don't match what the package
+index says they should be — pip's own integrity check catches this and
+refuses to install. If this happens on small files too (not just huge ones
+where a dropped/resumed download could explain it), it means something
+between you and PyPI is actively rewriting content in transit — typically a
+corporate proxy's content-inspection/antivirus layer, which sits *inside*
+the TLS connection (it terminates and re-establishes TLS itself), so it can
+alter bytes without breaking the certificate chain.
+
+`backend/Dockerfile` already installs dependencies as separate layers
+(`requirements/*.txt`, one `pip install` per group) specifically so a
+corrupted download only costs a retry of that one group, not the whole
+build — just re-run `docker compose up --build` and Docker's layer cache
+skips everything that already succeeded.
+
+If it keeps recurring across different, unrelated packages, retrying
+indefinitely won't converge. The durable fixes, in order of preference:
+
+1. **Ask IT for an SSL-inspection exclusion** for `pypi.org`,
+   `files.pythonhosted.org`, `download.pytorch.org`, and `huggingface.co`.
+   Many companies already exclude package registries from proxies like
+   Zscaler for exactly this reason — it's a common, well-understood request.
+2. **Use an internal package mirror** if your company runs one (Artifactory,
+   Nexus, devpi) — point `pip` at it instead of the public index, bypassing
+   the inspecting proxy entirely for these installs.
+3. **Build on a machine that isn't behind the proxy** (a personal machine
+   off the corporate network/VPN, a cloud VM, CI) and transfer the built
+   images to your target host via `docker save` / `docker load` — see
+   [Building for an air-gapped environment](#building-for-an-air-gapped-environment)
+   above; this is the same transfer workflow either way.
+
 ## Using it
 
 1. Open the frontend, drop in files (PDF, images, CSV, JSON, Excel — mix

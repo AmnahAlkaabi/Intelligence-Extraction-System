@@ -44,8 +44,22 @@ WORKDIR /app
 RUN pip install --no-cache-dir --timeout 100 --retries 5 \
     torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cpu
 
+# Installed as separate layers (one per requirements/*.txt group) rather
+# than a single `-r requirements.txt` so that a mid-install failure -- e.g.
+# a corrupted download over an unreliable connection -- only costs a retry
+# of that one group. Docker's build cache keeps every group that already
+# succeeded, so re-running `docker compose up --build` resumes at the first
+# group that hasn't completed yet instead of redownloading everything.
 COPY requirements.txt .
-RUN pip install --no-cache-dir --timeout 100 --retries 5 -r requirements.txt
+COPY requirements/ ./requirements/
+RUN pip install --no-cache-dir --timeout 100 --retries 5 -r requirements/core.txt
+RUN pip install --no-cache-dir --timeout 100 --retries 5 -r requirements/llm.txt
+RUN pip install --no-cache-dir --timeout 100 --retries 5 -r requirements/embeddings.txt
+RUN pip install --no-cache-dir --timeout 100 --retries 5 -r requirements/graph.txt
+RUN pip install --no-cache-dir --timeout 100 --retries 5 -r requirements/pdf.txt
+RUN pip install --no-cache-dir --timeout 100 --retries 5 -r requirements/ocr.txt
+RUN pip install --no-cache-dir --timeout 100 --retries 5 -r requirements/data.txt
+RUN pip install --no-cache-dir --timeout 100 --retries 5 -r requirements/utils.txt
 
 # huggingface_hub defaults to its newer "Xet" storage backend for large
 # files, which downloads from cas-server.xethub.hf.co instead of
