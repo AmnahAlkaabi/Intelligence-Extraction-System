@@ -17,6 +17,20 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# huggingface_hub defaults to its newer "Xet" storage backend for large
+# files, which downloads from cas-server.xethub.hf.co instead of
+# huggingface.co. Some networks/firewalls allow the main HF domain but not
+# that separate CDN host, which fails model downloads below with a
+# ConnectionError even though general HF connectivity is fine. Forcing the
+# classic HTTP download path avoids that extra host dependency entirely.
+# HF_HUB_DISABLE_XET is the documented switch, but it's had reliability
+# issues in some huggingface_hub versions, so the hf_xet package (if pulled
+# in transitively) is also removed as a belt-and-suspenders fix — with it
+# gone, huggingface_hub can't use the Xet path even if the env var is
+# ignored.
+ENV HF_HUB_DISABLE_XET=1
+RUN pip uninstall -y hf_xet || true
+
 # Pre-download model weights into the image so the air-gapped container
 # never needs network access at runtime. Swap the model name below if you
 # change EMBEDDING_MODEL_NAME in .env — it must match at build time.
