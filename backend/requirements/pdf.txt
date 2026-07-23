@@ -5,6 +5,18 @@
 # group to install (docling pulls in a sizeable transitive dependency tree),
 # kept in its own layer so a failure here doesn't force re-downloading
 # everything else too.
+#
+# docling-core / docling-ibm-models are pinned explicitly to the exact
+# versions docling==2.15.1 itself was released and locked against (per its
+# poetry.lock at that tag) -- both are the lowest bound of docling's own
+# "^2.13.1" / "^3.1.0" ranges. Without these pins, pip's resolver searches
+# through dozens of newer releases of each (they're independently versioned,
+# not tied to docling's version number) looking for one compatible with
+# other already-pinned packages, and can blow past its round limit entirely
+# (`ResolutionTooDeep`) rather than just being slow -- pinning removes the
+# search, it doesn't just speed it up.
 docling==2.15.1
+docling-core[chunking]==2.13.1
+docling-ibm-models==3.1.0
 rapidocr-onnxruntime==1.4.4
 onnxruntime==1.20.1
