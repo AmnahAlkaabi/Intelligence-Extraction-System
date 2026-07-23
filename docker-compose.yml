@@ -22,6 +22,12 @@ services:
       retries: 12
 
   backend:
+    # image: lets you skip building entirely -- `docker compose pull backend`
+    # fetches this pre-built image from GHCR (built by .github/workflows/
+    # docker-build.yml on every push), then `docker compose up -d` runs it
+    # without ever invoking `build:` locally. Only falls back to a local
+    # build if you explicitly run `docker compose up --build`.
+    image: ghcr.io/ankitsingh1323-web/intelligence-extraction-system-backend:latest
     build:
       context: ./backend
       args:
@@ -41,6 +47,7 @@ services:
       - iex_data:/app/data
 
   frontend:
+    image: ghcr.io/ankitsingh1323-web/intelligence-extraction-system-frontend:latest
     build:
       context: ./frontend
     container_name: iex-frontend

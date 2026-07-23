@@ -70,6 +70,31 @@ NEO4J_PASSWORD=<pick-a-real-password>
 `qwen` or `kimi` — swap them if you'd rather use Kimi2 for extraction and
 Qwen for synthesis/chat.
 
+## Fastest path: pull pre-built images instead of building locally
+
+`.github/workflows/docker-build.yml` builds both images on every push and
+publishes them to GitHub Container Registry (GHCR). If building locally is
+slow or unreliable (corporate proxy, restricted network — see the
+troubleshooting sections below), skip building entirely:
+
+```powershell
+docker login ghcr.io -u <your-github-username>
+# password prompt: paste a GitHub Personal Access Token with `read:packages`
+# scope -- GitHub -> Settings -> Developer settings -> Personal access
+# tokens -> Tokens (classic) -> Generate new token
+
+docker compose pull
+docker compose up -d
+```
+
+`docker compose.yml`'s `backend`/`frontend` services have both `image:`
+(the GHCR tag, for pulling) and `build:` (for building locally, e.g. after
+you change source code) — `pull` + plain `up` uses the pre-built image;
+`up --build` builds locally as before. The GHCR package is private by
+default (matches the repo), hence the login step; once authenticated,
+`docker compose pull` works the same way every time you want the latest
+build after I push a fix — no local build involved at all.
+
 ## Building for an air-gapped environment
 
 Images must be built where the model weights (BGE + Docling) and Python/npm
