@@ -29,8 +29,18 @@ ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 
 WORKDIR /app
 
+# CPU-only torch build. The default PyPI wheel for linux/amd64 drags in the
+# *entire* NVIDIA CUDA stack (nvidia-cublas-cu12, nvidia-cudnn-cu12, etc) --
+# several extra GB -- even though this app only runs embeddings on CPU
+# (EMBEDDING_DEVICE=cpu). Installing from PyTorch's dedicated CPU wheel
+# index avoids that entirely: smaller download, smaller final image (which
+# matters doubly for air-gapped hosts where the image has to be saved and
+# transferred), and far less to fail downloading on a slow connection.
+RUN pip install --no-cache-dir --timeout 100 --retries 5 \
+    torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
+
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --timeout 100 --retries 5 -r requirements.txt
 
 # huggingface_hub defaults to its newer "Xet" storage backend for large
 # files, which downloads from cas-server.xethub.hf.co instead of

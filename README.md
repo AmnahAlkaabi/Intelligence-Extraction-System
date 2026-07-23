@@ -206,6 +206,7 @@ chat) works automatically on any parser that returns a `ParsedDocument`.
 # Backend
 cd backend
 python -m venv .venv && source .venv/bin/activate
+pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
 pip install -r requirements.txt
 uvicorn app.main:app --reload
 
