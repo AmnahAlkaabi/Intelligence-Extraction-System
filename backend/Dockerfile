@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1
 FROM python:3.11-slim AS base
 
 # tesseract-ocr: local OCR engine. libgl1/libglib2.0-0: required by docling's
