@@ -104,6 +104,48 @@ Browser (optional, for manually inspecting the graph) is at
 > container never needs to reach the internet — only your on-prem
 > Qwen/Kimi2/Neo4j hosts.
 
+## Building behind a corporate TLS-inspecting proxy
+
+If you're building on a corporate-managed machine (Zscaler, Netskope,
+Fortinet, or similar), the build may fail with `SSL: CERTIFICATE_VERIFY_FAILED:
+unable to get local issuer certificate` when downloading model weights (or
+even Python/npm packages). This means your network is re-signing HTTPS
+traffic with a private root CA — Windows trusts it because IT installed it
+via policy, but the minimal Linux build container doesn't know it exists.
+
+**Fix: give the build your corporate root CA.**
+
+1. **Find it.** Open PowerShell and list your trusted root CAs:
+   ```powershell
+   Get-ChildItem -Path Cert:\LocalMachine\Root | Select-Object Subject, Thumbprint
+   ```
+   Look for one that isn't a well-known public CA (DigiCert, Sectigo,
+   GlobalSign, Microsoft, Let's Encrypt, etc) — it's usually named after
+   your company or your security vendor (e.g. "Zscaler Root CA", "Netskope
+   CA", "Contoso Internal CA").
+
+2. **Export it as base64 PEM**, substituting the matching text for `<name>`:
+   ```powershell
+   $cert = Get-ChildItem -Path Cert:\LocalMachine\Root | Where-Object { $_.Subject -like "*<name>*" }
+   Export-Certificate -Cert $cert -FilePath "$HOME\Downloads\corporate-ca.cer" -Type CERT
+   certutil -encode "$HOME\Downloads\corporate-ca.cer" "$HOME\Downloads\corporate-ca.pem"
+   ```
+
+3. **Drop it into the repo** as `backend/certs/corporate-ca.crt` (the
+   extension must be `.crt` for the file to be picked up):
+   ```powershell
+   Copy-Item "$HOME\Downloads\corporate-ca.pem" backend\certs\corporate-ca.crt
+   ```
+
+4. **Build normally** — `backend/Dockerfile` automatically trusts anything
+   found in `backend/certs/` (see the `update-ca-certificates` step). If
+   you don't have this issue, leave that folder empty; it's a no-op.
+
+If you're not sure whether this applies to you, the safest check is: does
+`docker pull hello-world` succeed, but model downloads fail with a
+certificate error specifically (not a timeout)? That combination points
+directly at this.
+
 ## Using it
 
 1. Open the frontend, drop in files (PDF, images, CSV, JSON, Excel — mix

@@ -10,7 +10,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
     libglib2.0-0 \
     curl \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+
+# Optional: trust a corporate TLS-inspecting proxy's root CA (Zscaler,
+# Netskope, Fortinet, etc). If your network re-signs outbound HTTPS with a
+# private root certificate — common on managed corporate laptops — Windows
+# trusts it (IT pushed it via policy) but this minimal Linux image has no
+# idea it exists, causing SSL_CERT_VERIFY_FAILED on any HTTPS call the proxy
+# intercepts (PyPI, Hugging Face, etc), even though the connection itself
+# succeeds. Export your corporate root CA as a base64 .crt file and drop it
+# into backend/certs/ before building — see README for exact steps. If you
+# don't have this issue, leave the folder empty; this is then a no-op.
+COPY certs/ /usr/local/share/ca-certificates/
+RUN update-ca-certificates
+ENV REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 
 WORKDIR /app
 
