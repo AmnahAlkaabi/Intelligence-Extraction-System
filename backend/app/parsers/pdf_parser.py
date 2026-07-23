@@ -1,15 +1,28 @@
 """PDF Agent (L2) — powered by Docling (github.com/DS4SD/docling).
 
-Docling handles layout-aware text extraction, table structure recognition
-and OCR fallback for scanned pages, all locally (its models are downloaded
-once and cached — no runtime network dependency once cached on the
-air-gapped host).
+Docling handles layout-aware text extraction and table structure
+recognition (TableFormer) natively, which is why it's the primary parser
+here rather than MinerU: for the business/legal/financial document types
+this system targets, Docling's table fidelity and structured, reading-order
+output win out, it's Apache-2.0 licensed, and it's meaningfully faster.
+MinerU's edge (best-in-class layout mAP, LaTeX/formula recognition) mainly
+pays off on multi-column scientific papers, which aren't the primary target
+here — see README for how to add it as an alternate pipeline if needed.
+
+For the OCR fallback on scanned pages, Docling is configured to use
+RapidOCR rather than the Tesseract default. RapidOCR is an ONNX-runtime
+deployment of PaddleOCR's detection/recognition/classification models —
+same model family and accuracy as PaddleOCR, but without the heavy
+PaddlePaddle framework dependency, and its default models ship bundled
+inside the `rapidocr-onnxruntime` pip wheel itself. That means zero
+runtime network calls even on a cold start on the air-gapped host: no
+separate model-download step is needed the way Tesseract/EasyOCR require.
 """
 import asyncio
 import logging
 
 from docling.datamodel.base_models import InputFormat
-from docling.datamodel.pipeline_options import PdfPipelineOptions
+from docling.datamodel.pipeline_options import PdfPipelineOptions, RapidOcrOptions
 from docling.document_converter import DocumentConverter, PdfFormatOption
 
 from app.config import get_settings
@@ -27,6 +40,7 @@ class PDFParser(BaseParser):
         pipeline_options = PdfPipelineOptions()
         pipeline_options.do_ocr = settings.docling_do_ocr
         pipeline_options.do_table_structure = settings.docling_do_table_structure
+        pipeline_options.ocr_options = RapidOcrOptions(text_score=settings.rapidocr_text_score)
         self._converter = DocumentConverter(
             format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)}
         )

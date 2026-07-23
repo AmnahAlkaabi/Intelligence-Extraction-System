@@ -14,7 +14,7 @@ with **no outbound internet calls at runtime**.
 | Extraction / reasoning model | **Qwen** (on-prem, OpenAI-compatible endpoint) |
 | Synthesis / chat model | **Kimi2** (on-prem, OpenAI-compatible endpoint) |
 | Embeddings | **BGE** (`BAAI/bge-large-en-v1.5`, local, `sentence-transformers`) |
-| PDF parsing | **Docling** (layout-aware text/table extraction + OCR fallback) |
+| PDF parsing | **Docling** + **RapidOCR** fallback (layout-aware text/table extraction; RapidOCR is an ONNX deployment of PaddleOCR's models for scanned pages — see [PDF engine choice](#pdf-engine-choice-docling-vs-mineru-vs-paddleocr)) |
 | Knowledge graph + vector index | **Neo4j** (native vector index doubles as the RAG store — no second DB) |
 | Backend | FastAPI (Python, async) |
 | Frontend | React + Vite, served via nginx |
@@ -118,6 +118,37 @@ Browser (optional, for manually inspecting the graph) is at
 4. **💬 Chat** unlocks once the knowledge graph is built (you don't have to
    wait for the full synthesis step) — ask natural-language questions and get
    answers grounded in retrieved passages + graph facts, with citations.
+
+## PDF engine choice: Docling vs MinerU vs PaddleOCR
+
+All three were evaluated for the PDF Agent:
+
+- **Docling** — best table-structure fidelity (TableFormer) and outputs a
+  structured, reading-order-aware document object; fast; Apache-2.0. Best
+  fit for the business/legal/financial document types this system targets
+  (reports, contracts, forms).
+- **MinerU** — best layout-detection accuracy and by far the best formula
+  (LaTeX) recognition, but that edge mainly matters for multi-column
+  scientific papers, not the primary use case here. Internally it already
+  uses PaddleOCR for its own OCR step.
+- **PaddleOCR** — not a full document parser on its own (no native-text
+  extraction, no reading-order/table structure), but the strongest raw OCR
+  recognition of the three, especially multilingual.
+
+**Decision**: Docling stays the primary PDF parser (layout + tables +
+reading order), with its OCR fallback for scanned pages switched from
+Tesseract to **RapidOCR** — an ONNX-runtime deployment of PaddleOCR's
+detection/recognition/classification models, same accuracy family as
+PaddleOCR without the heavy PaddlePaddle framework dependency. Its default
+models ship inside the `rapidocr-onnxruntime` pip wheel, so there's no
+separate model-download step even on a cold start on the air-gapped host —
+a meaningful plus over Tesseract/EasyOCR for this deployment model. See
+`backend/app/parsers/pdf_parser.py`.
+
+If you later process a lot of scientific/formula-heavy PDFs, MinerU is a
+reasonable addition as an alternate PDF pipeline (selectable per-job) —
+its output would need a translation layer into `ParsedDocument`, the same
+pattern described below for any new parser.
 
 ## Extending file type support
 

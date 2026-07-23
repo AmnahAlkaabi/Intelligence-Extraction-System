@@ -36,9 +36,14 @@ class Settings(BaseSettings):
     embedding_batch_size: int = 32
 
     # --- Docling / OCR ---
+    # ocr_lang is used by the standalone Image Agent (pytesseract, for raw
+    # image uploads). The PDF Agent's OCR fallback uses RapidOCR instead
+    # (see parsers/pdf_parser.py) — its bundled model is not language-gated
+    # the way Tesseract's is, so there's no equivalent setting for it.
     ocr_lang: str = "eng"
     docling_do_ocr: bool = True
     docling_do_table_structure: bool = True
+    rapidocr_text_score: float = 0.5   # confidence threshold below which OCR'd text is dropped
 
     # --- Neo4j (graph store + vector index = GraphRAG backend) ---
     neo4j_uri: str = "bolt://localhost:7687"

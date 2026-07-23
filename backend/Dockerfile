@@ -24,8 +24,20 @@ RUN pip install --no-cache-dir -r requirements.txt
 ARG EMBEDDING_MODEL_NAME=BAAI/bge-large-en-v1.5
 RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('${EMBEDDING_MODEL_NAME}')"
 
-# Pre-fetch Docling's layout/OCR model artifacts for the same reason.
-RUN python -c "from docling.document_converter import DocumentConverter; DocumentConverter()" || true
+# Pre-fetch Docling's layout-detection model artifacts (downloaded from HF
+# Hub on first use) into the image, mirroring the exact pipeline config used
+# at runtime (app/parsers/pdf_parser.py) so this also warms/validates the
+# RapidOCR ONNX session. RapidOCR's own detection/recognition/classification
+# models ship inside the rapidocr-onnxruntime wheel already installed above,
+# so this step triggers no network call for the OCR side — only for Docling's
+# layout model.
+RUN python -c "\
+from docling.datamodel.base_models import InputFormat; \
+from docling.datamodel.pipeline_options import PdfPipelineOptions, RapidOcrOptions; \
+from docling.document_converter import DocumentConverter, PdfFormatOption; \
+opts = PdfPipelineOptions(); \
+opts.ocr_options = RapidOcrOptions(); \
+DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=opts)})" || true
 
 COPY app ./app
 

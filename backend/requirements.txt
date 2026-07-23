@@ -14,10 +14,15 @@ torch==2.5.1
 # Graph store
 neo4j==5.27.0
 
-# PDF parsing
+# PDF parsing (Docling for layout/tables + RapidOCR — an ONNX deployment of
+# PaddleOCR's detection/recognition models — as its scanned-page OCR engine;
+# RapidOCR's default models ship inside the wheel, so no model download step
+# is needed even on a cold air-gapped start)
 docling==2.15.1
+rapidocr-onnxruntime==1.4.4
+onnxruntime==1.20.1
 
-# Image OCR
+# Image OCR (standalone image uploads, not part of the PDF pipeline above)
 pytesseract==0.3.13
 Pillow==11.0.0
 
