@@ -13,6 +13,7 @@ instead of separate message-passing actors.
 import logging
 
 from app.agents.chunking import chunk_and_embed
+from app.agents.data_quality import assess_quality
 from app.agents.extraction import run_financial, run_ner, run_pii, run_relations, run_summary
 from app.llm.client import get_llm_client
 from app.models.schemas import DomainResult, FileCategory
@@ -45,6 +46,7 @@ async def process_file(file_path: str, unreachable_backends: set[str] | None = N
     text = doc.full_text()
     if not text.strip() or doc.category not in _TEXT_CATEGORIES:
         result.chunks = await chunk_and_embed(doc)
+        result.quality = assess_quality(doc, result)
         return result
 
     try:
@@ -58,6 +60,7 @@ async def process_file(file_path: str, unreachable_backends: set[str] | None = N
         msg = (f"NER/PII/Financial/Relation extraction skipped: "
                f"'{extraction_backend}' model endpoint is unreachable")
         result.errors.append(msg)
+        result.quality = assess_quality(doc, result)
         return result
 
     try:
@@ -89,4 +92,5 @@ async def process_file(file_path: str, unreachable_backends: set[str] | None = N
     except Exception:
         logger.exception("Summary failed for %s", file_path)
 
+    result.quality = assess_quality(doc, result)
     return result

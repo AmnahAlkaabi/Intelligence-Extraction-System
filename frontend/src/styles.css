@@ -145,6 +145,23 @@ a { color: var(--accent); text-decoration: none; }
 
 .index-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
 .index-card { background: var(--bg2); border: 1px solid var(--line); border-radius: 6px; padding: 16px 18px; }
+
+.dq-list { display: flex; flex-direction: column; gap: 8px; }
+.dq-row { display: flex; gap: 12px; align-items: flex-start; padding: 10px 0; border-top: 1px solid var(--line); }
+.dq-row:first-child { border-top: none; padding-top: 0; }
+.dq-score {
+  flex: 0 0 auto; width: 40px; height: 40px; border-radius: 6px; display: flex;
+  align-items: center; justify-content: center; font-family: monospace; font-weight: 700; font-size: 13px;
+}
+.dq-good { background: rgba(0,232,122,0.12); color: var(--accent2); }
+.dq-minor { background: rgba(74,158,255,0.12); color: var(--accent); }
+.dq-partial { background: rgba(245,200,66,0.12); color: var(--warn); }
+.dq-severe { background: rgba(255,79,79,0.12); color: var(--danger); }
+.dq-body { flex: 1; min-width: 0; }
+.dq-header { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; }
+.dq-file { font-family: monospace; color: var(--text); word-break: break-all; }
+.dq-completeness { color: var(--muted); flex: 0 0 auto; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.5px; }
+.dq-issues { margin: 6px 0 0; padding-left: 18px; font-size: 12px; line-height: 1.6; color: var(--muted); }
 .index-name { font-size: 11px; letter-spacing: 0.5px; color: var(--muted); text-transform: uppercase; margin-bottom: 6px; }
 .index-value { font-family: monospace; font-size: 22px; font-weight: 700; color: var(--accent); margin-bottom: 8px; }
 .index-basis { font-size: 12px; line-height: 1.6; color: var(--text); margin: 0 0 10px; }

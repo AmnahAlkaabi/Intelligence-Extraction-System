@@ -149,6 +149,7 @@ class DomainResult(BaseModel):
     tables: list[TableBlock] = []
     summary: str | None = None
     errors: list[str] = []
+    quality: DataQuality | None = None
 
 
 # -------------------------------------------------------------- synthesis --
@@ -172,6 +173,7 @@ class BIReport(BaseModel):
     risks: list[str] = []
     market_signals: list[str] = []
     business_use_cases: list[BusinessIndex] = []  # cross-file/cross-data indices
+    data_quality: list[DataQuality] = []  # per-file Validator agent output
 
 
 class ComplianceReport(BaseModel):

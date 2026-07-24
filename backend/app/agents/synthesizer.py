@@ -262,6 +262,7 @@ async def synthesize(results: list[DomainResult], skip_llm: bool = False) -> Syn
         risks=raw.get("risks") or [],
         market_signals=raw.get("market_signals") or [],
         business_use_cases=compute_business_indices(results, all_entities, all_relations),
+        data_quality=[r.quality for r in results if r.quality is not None],
     )
 
     severity_counts: dict[str, int] = {}

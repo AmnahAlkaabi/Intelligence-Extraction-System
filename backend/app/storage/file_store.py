@@ -55,6 +55,13 @@ def write_markdown_report(job_id: str, output: SynthesisOutput) -> str:
 
     lines = ["# Intelligence Extraction Report", "", "## Executive Summary", bi.executive_summary, ""]
 
+    lines += ["## Data Quality", "Deterministic per-file quality assessment (Validator agent).", ""]
+    for q in bi.data_quality:
+        lines.append(f"- **{q.source_file}: {q.score}/100 ({q.completeness})**")
+        for issue in q.issues:
+            lines.append(f"  - {issue}")
+    lines.append("")
+
     lines += ["## Key Entities", *[f"- {e}" for e in bi.key_entities], ""]
     lines += ["## Financial Highlights", *[f"- {x}" for x in bi.financial_highlights], ""]
     lines += ["## Risks & Red Flags", *[f"- {x}" for x in bi.risks], ""]

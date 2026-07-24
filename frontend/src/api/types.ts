@@ -20,6 +20,13 @@ export interface BusinessIndex {
   sources: string[];
 }
 
+export interface DataQuality {
+  source_file: string;
+  score: number;
+  completeness: string;
+  issues: string[];
+}
+
 export interface BIReport {
   executive_summary: string;
   key_entities: string[];
@@ -27,6 +34,7 @@ export interface BIReport {
   risks: string[];
   market_signals: string[];
   business_use_cases: BusinessIndex[];
+  data_quality: DataQuality[];
 }
 
 export interface PIIFinding {
