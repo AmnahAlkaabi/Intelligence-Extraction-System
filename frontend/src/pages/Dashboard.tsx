@@ -6,6 +6,7 @@ import { JobProgress } from "../components/JobProgress";
 import { AgentStatusPanel, activeAgentCount } from "../components/AgentStatusPanel";
 import { CollapsibleSection } from "../components/CollapsibleSection";
 import { StatusBadge } from "../components/StatusBadge";
+import { JobTitle } from "../components/JobTitle";
 import { BIReportView } from "../components/BIReportView";
 import { PIIReportView } from "../components/PIIReportView";
 import { KnowledgeGraphView } from "../components/KnowledgeGraphView";
@@ -72,7 +73,11 @@ export default function DashboardPage() {
   return (
     <div className="page-wide">
       <div className="job-header-row">
-        <h1 className="page-title mono-id">Job {job.job_id}</h1>
+        <JobTitle
+          jobId={job.job_id}
+          name={job.name}
+          onRenamed={(name) => setJob((prev) => (prev ? { ...prev, name } : prev))}
+        />
         <StatusBadge status={job.status} />
       </div>
 

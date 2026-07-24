@@ -7,8 +7,7 @@ context requirement in the pipeline.
 import json
 import logging
 
-from app.agents.insight_agent import compute_cross_data_insights
-from app.agents.mapping_agent import build_source_target_mapping
+from app.agents.mapping_agent import build_bi_tables
 from app.llm.client import get_llm_client
 from app.models.schemas import (
     BIReport,
@@ -17,8 +16,10 @@ from app.models.schemas import (
     DataDump,
     DomainResult,
     Entity,
+    FileStats,
     KnowledgeGraphExport,
     Relation,
+    SourceTargetMapping,
     SynthesisOutput,
 )
 
@@ -204,15 +205,15 @@ def _compliance_coverage_index(results: list[DomainResult]) -> BusinessIndex:
     )
 
 
-def compute_business_indices(
+def compute_corpus_overview(
     results: list[DomainResult], all_entities: list[Entity], all_relations: list[Relation]
 ) -> list[BusinessIndex]:
-    """Every index here is computed deterministically from the structured
-    extraction output -- not asked of the LLM -- specifically because each
-    one requires joining two or more data types/files together (financial
-    facts <-> entities, PII <-> source files, entities <-> entities via
-    relations). They're also unaffected by the synthesis model being down,
-    since none of them depend on an LLM call.
+    """Corpus-level KPIs for the High Level Analysis tab's "what's in the
+    dump" section. Every index here is computed deterministically -- not
+    asked of the LLM -- specifically because each one requires joining two
+    or more data types/files together (financial facts <-> entities, PII
+    <-> source files, entities <-> entities via relations). Unaffected by
+    the synthesis model being down, since none of them depend on an LLM call.
     """
     indices = [
         _cross_document_entity_index(results),
@@ -225,6 +226,26 @@ def compute_business_indices(
     if concentration:
         indices.append(concentration)
     return indices
+
+
+def compute_file_breakdown(results: list[DomainResult]) -> list[FileStats]:
+    """Table/file-wise info for the High Level Analysis tab -- what came
+    out of each individual file, computed directly from its DomainResult.
+    """
+    return [
+        FileStats(
+            source_file=r.source_file,
+            category=r.domain,
+            entities=len(r.entities),
+            relations=len(r.relations),
+            pii_findings=len(r.pii_findings),
+            financial_facts=len(r.financial_facts),
+            tables=len(r.tables),
+            chunks=len(r.chunks),
+            summary=r.summary,
+        )
+        for r in results
+    ]
 
 
 async def synthesize(results: list[DomainResult], skip_llm: bool = False) -> SynthesisOutput:
@@ -257,11 +278,8 @@ async def synthesize(results: list[DomainResult], skip_llm: bool = False) -> Syn
         if skip_llm else
         "Synthesis could not be generated (LLM unavailable). See per-file summaries below."
     )
-    source_target_mapping = build_source_target_mapping(results)
-    business_use_cases = (
-        compute_business_indices(results, all_entities, all_relations)
-        + compute_cross_data_insights(source_target_mapping)
-    )
+    bi_tables = build_bi_tables(results)
+    source_target_mapping = SourceTargetMapping(tables=bi_tables)
 
     bi_report = BIReport(
         executive_summary=raw.get("executive_summary") or fallback_summary,
@@ -269,7 +287,9 @@ async def synthesize(results: list[DomainResult], skip_llm: bool = False) -> Syn
         financial_highlights=raw.get("financial_highlights") or [],
         risks=raw.get("risks") or [],
         market_signals=raw.get("market_signals") or [],
-        business_use_cases=business_use_cases,
+        corpus_overview=compute_corpus_overview(results, all_entities, all_relations),
+        file_breakdown=compute_file_breakdown(results),
+        business_use_cases=bi_tables,
         data_quality=[r.quality for r in results if r.quality is not None],
     )
 

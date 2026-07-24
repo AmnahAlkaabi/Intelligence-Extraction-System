@@ -79,9 +79,21 @@ def write_markdown_report(job_id: str, output: SynthesisOutput) -> str:
     d = job_output_dir(job_id)
     bi, comp, kg = output.bi_report, output.compliance_report, output.knowledge_graph
 
-    lines = ["# Intelligence Extraction Report", "", "## Executive Summary", bi.executive_summary, ""]
+    lines = ["# Intelligence Extraction Report", "", "## High Level Analysis", ""]
+    lines += ["### What's in the Dump", bi.executive_summary, ""]
+    for idx in bi.corpus_overview:
+        sources_str = f" ({', '.join(idx.sources)})" if idx.sources else ""
+        lines.append(f"- **{idx.name}: {idx.value}** — {idx.basis}{sources_str}")
+    lines.append("")
+    lines += ["### File-by-File Breakdown", "",
+              "| File | Category | Entities | Relations | PII | Financial Facts | Tables | Chunks |",
+              "|---|---|---|---|---|---|---|---|"]
+    for fs in bi.file_breakdown:
+        lines.append(f"| {fs.source_file} | {fs.category} | {fs.entities} | {fs.relations} | "
+                      f"{fs.pii_findings} | {fs.financial_facts} | {fs.tables} | {fs.chunks} |")
+    lines.append("")
 
-    lines += ["## Data Quality", "Deterministic per-file quality assessment (Validator agent).", ""]
+    lines += ["### Quality Check Stats", "Deterministic per-file quality assessment (Validator agent).", ""]
     for q in bi.data_quality:
         lines.append(f"- **{q.source_file}: {q.score}/100 ({q.completeness})**")
         for issue in q.issues:
@@ -92,10 +104,12 @@ def write_markdown_report(job_id: str, output: SynthesisOutput) -> str:
     lines += ["## Financial Highlights", *[f"- {x}" for x in bi.financial_highlights], ""]
     lines += ["## Risks & Red Flags", *[f"- {x}" for x in bi.risks], ""]
     lines += ["## Market Signals", *[f"- {x}" for x in bi.market_signals], ""]
-    lines += ["## Business Use Cases", "Cross-file/cross-data indices computed from the extraction results.", ""]
-    for idx in bi.business_use_cases:
-        sources_str = f" ({', '.join(idx.sources)})" if idx.sources else ""
-        lines.append(f"- **{idx.name}: {idx.value}** — {idx.basis}{sources_str}")
+    lines += ["## Business Use Cases", "Proposed BI-layer tables, computed from column standardization and executed joins.", ""]
+    for t in bi.business_use_cases:
+        lines.append(f"- **{t.name}** — {t.purpose}")
+        lines.append(f"  - Grain: {t.grain}")
+        if t.join_logic:
+            lines.append(f"  - Join: `{t.join_logic}` — {t.join_quality}")
     lines.append("")
 
     lines += ["## PII / Masking Report", f"Severity counts: {comp.severity_counts}", ""]
@@ -113,16 +127,17 @@ def write_markdown_report(job_id: str, output: SynthesisOutput) -> str:
     lines += ["", "## Data Dump", f"Files processed: {len(output.data_dump.files_processed)}",
               f"Total chunks indexed: {output.data_dump.chunk_count}"]
 
-    stm = output.source_target_mapping
-    lines += ["", "## Source to Target Mapping", "Data dictionary: source column -> standardized target column.", ""]
-    lines += ["| Source File | Source Table | Source Column | Target Column | Type |",
-              "|---|---|---|---|---|"]
-    for c in stm.columns:
-        lines.append(f"| {c.source_file} | {c.source_table} | {c.source_column} | {c.target_column} | {c.data_type_guess} |")
-    if stm.joins:
-        lines += ["", "### Suggested Joins"]
-        for j in stm.joins:
-            lines.append(f"- `{j.left}` = `{j.right}` on **{j.target_column}** ({j.match_basis}, confidence {j.confidence})")
+    lines += ["", "## Source to Target Mapping", "One mapping sheet per proposed BI table (see Business Use Cases).", ""]
+    for t in output.source_target_mapping.tables:
+        lines += [f"### {t.name}", ""]
+        if t.join_logic:
+            lines.append(f"**Join:** `{t.join_logic}`  \n**Join quality:** {t.join_quality}")
+            lines.append("")
+        lines += ["| Source File | Source Table | Source Column | Target Column | Type |",
+                  "|---|---|---|---|---|"]
+        for c in t.columns:
+            lines.append(f"| {c.source_file} | {c.source_table} | {c.source_column} | {c.target_column} | {c.data_type_guess} |")
+        lines.append("")
 
     content = "\n".join(lines)
     path = d / "report.md"
@@ -147,10 +162,12 @@ def write_mapping_csv(job_id: str, output: SynthesisOutput) -> str:
     path = d / "source_target_mapping.csv"
     buf = io.StringIO()
     writer = csv.writer(buf)
-    writer.writerow(["source_file", "source_table", "source_column", "target_column", "data_type_guess", "sample_values"])
-    for c in output.source_target_mapping.columns:
-        writer.writerow([c.source_file, c.source_table, c.source_column, c.target_column,
-                          c.data_type_guess, "; ".join(c.sample_values)])
+    writer.writerow(["bi_table", "join_logic", "source_file", "source_table", "source_column",
+                      "target_column", "data_type_guess", "sample_values"])
+    for t in output.source_target_mapping.tables:
+        for c in t.columns:
+            writer.writerow([t.name, t.join_logic or "", c.source_file, c.source_table, c.source_column,
+                              c.target_column, c.data_type_guess, "; ".join(c.sample_values)])
     path.write_text(buf.getvalue(), encoding="utf-8")
     return str(path)
 

@@ -254,6 +254,20 @@ a { color: var(--accent); text-decoration: none; }
 .job-header-row { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
 .job-header-row .page-title { margin: 0; }
 
+.job-title-display {
+  display: flex; align-items: center; gap: 8px; background: none; border: none;
+  cursor: pointer; padding: 4px 6px; margin: -4px -6px; border-radius: 5px;
+}
+.job-title-display:hover { background: var(--bg2); }
+.job-title-display:hover .job-title-edit-ico { opacity: 1; }
+.job-title-edit-ico { opacity: 0; color: var(--muted); font-size: 13px; transition: opacity .15s; }
+.job-title-edit { display: flex; align-items: center; gap: 8px; }
+.job-title-input {
+  background: var(--bg2); border: 1px solid var(--accent); border-radius: 5px; padding: 7px 10px;
+  color: var(--text); font-size: 22px; font-family: var(--font-display); font-weight: 700; min-width: 280px;
+}
+.job-title-input:focus { outline: none; }
+
 /* ============ COLLAPSIBLE SECTIONS (Job Status / Agent Activity) ============ */
 .section-panel { border: 1px solid var(--line); border-radius: 6px; margin-bottom: 14px; overflow: hidden; background: var(--bg2); }
 .section-header {
@@ -386,6 +400,32 @@ a { color: var(--accent); text-decoration: none; }
 }
 .muted { color: var(--muted); font-size: 13px; }
 .muted.small { font-size: 11px; }
+
+.section-block-title {
+  font-family: var(--font-display); font-size: 15px; font-weight: 700; color: var(--text);
+  margin: 26px 0 12px; padding-top: 18px; border-top: 1px solid var(--line);
+}
+.section-block-title:first-child { margin-top: 0; padding-top: 0; border-top: none; }
+
+.bi-table-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin-bottom: 8px; }
+.bi-table-card { background: var(--bg2); border: 1px solid var(--line); border-radius: 6px; padding: 16px 18px; }
+.bi-table-card-linked { border-color: var(--accent); box-shadow: 0 0 0 1px rgba(63,205,190,0.08); }
+.bi-table-name { font-family: var(--font-display); font-size: 15px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
+.bi-table-purpose { font-size: 12.5px; line-height: 1.6; color: var(--text); margin: 0 0 8px; }
+.bi-table-grain { font-size: 11px; color: var(--muted); margin-bottom: 10px; }
+.bi-table-join {
+  background: var(--bg3); border-radius: 5px; padding: 8px 10px; margin-bottom: 10px;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.bi-table-join code { font-size: 11px; color: var(--accent); word-break: break-all; }
+.bi-table-join-quality { font-size: 11px; color: var(--muted); }
+.bi-table-colcount { font-size: 11px; color: var(--muted); margin-top: 10px; }
+
+.mapping-join-callout {
+  background: var(--bg3); border-left: 3px solid var(--accent); border-radius: 4px;
+  padding: 8px 12px; margin-bottom: 10px; display: flex; flex-direction: column; gap: 3px;
+}
+.mapping-join-callout code { font-size: 12px; color: var(--accent); word-break: break-all; }
 
 .pii-summary { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
 .pii-count {

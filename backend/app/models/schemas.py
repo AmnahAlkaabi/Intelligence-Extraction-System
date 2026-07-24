@@ -168,11 +168,57 @@ class BusinessIndex(BaseModel):
     across two or more files/data types — not an LLM-guessed number.
     e.g. what share of contract value sits with one counterparty, computed
     by joining financial_facts to entities across every uploaded file.
+    Used for the corpus-level overview on the High Level Analysis tab.
     """
     name: str
     value: str                  # formatted result: "42%", "3 of 6 files", "0.78"
     basis: str                  # what was linked/combined to compute it
     sources: list[str] = []     # contributing file names
+
+
+class FileStats(BaseModel):
+    """Per-file breakdown for the High Level Analysis tab -- what came out
+    of each uploaded file, at a glance, computed directly from its
+    DomainResult (no LLM call).
+    """
+    source_file: str
+    category: str
+    entities: int = 0
+    relations: int = 0
+    pii_findings: int = 0
+    financial_facts: int = 0
+    tables: int = 0
+    chunks: int = 0
+    summary: str | None = None
+
+
+class BITableColumn(BaseModel):
+    """One column of a proposed BI table -- where it actually comes from."""
+    target_column: str          # standardized name, e.g. "customer_id"
+    source_file: str
+    source_table: str           # "<file>::<sheet/table/caption>"
+    source_column: str
+    data_type_guess: str        # id | email | phone | date | number | text
+    sample_values: list[str] = []
+
+
+class BITableProposal(BaseModel):
+    """A candidate table for the BI layer -- either a standardized
+    single-source table, or (the more valuable case) a cross-file table
+    formed by joining two sources on a shared key. Computed deterministically
+    by the Mapping Agent from column-name standardization + executed-join
+    overlap, never LLM-guessed. This same object is used both as a
+    "Business Use Case" (what the table is for) and as its own
+    Source -> Target Mapping entry (exactly how to build it) -- one
+    proposal, two views of it.
+    """
+    name: str                      # e.g. "Orders enriched with Customer" or "Customers"
+    purpose: str                   # the business use case this table serves
+    grain: str                     # what one row represents
+    source_files: list[str] = []
+    columns: list[BITableColumn] = []
+    join_logic: str | None = None      # e.g. "orders.customer_id (FK) -> customers.CustID (PK)"
+    join_quality: str | None = None    # e.g. "67% matched (2 of 3); 1 unmatched row in orders"
 
 
 class BIReport(BaseModel):
@@ -181,8 +227,10 @@ class BIReport(BaseModel):
     financial_highlights: list[str] = []
     risks: list[str] = []
     market_signals: list[str] = []
-    business_use_cases: list[BusinessIndex] = []  # cross-file/cross-data indices
-    data_quality: list[DataQuality] = []  # per-file Validator agent output
+    corpus_overview: list[BusinessIndex] = []      # "what's in the dump" -- corpus-level KPIs
+    file_breakdown: list[FileStats] = []           # table/file-wise info for each file
+    business_use_cases: list[BITableProposal] = []  # proposed BI-layer tables
+    data_quality: list[DataQuality] = []           # quality check stats (per-file Validator output)
 
 
 class ComplianceReport(BaseModel):
@@ -203,44 +251,13 @@ class DataDump(BaseModel):
     chunk_count: int = 0
 
 
-class ColumnMapping(BaseModel):
-    """One row of the data dictionary: a single source column, mapped to a
-    standardized target column name. Computed structurally (column-name
-    normalization + a small business-term alias table + sample value
-    typing) -- not LLM-guessed, same rationale as Business Use Cases and
-    Data Quality.
-    """
-    source_file: str
-    source_table: str          # "<file>::<sheet/table/caption>"
-    source_column: str
-    target_column: str         # standardized name, e.g. "customer_id"
-    data_type_guess: str       # id | email | phone | date | number | text
-    sample_values: list[str] = []
-
-
-class JoinRule(BaseModel):
-    """A suggested join between two source tables that share a standardized
-    target column, backed by actual overlapping sample values (not just a
-    name match) -- the "logic if there is any join required" piece.
-
-    matched/left_only/right_only counts come from actually executing the
-    join over every row (not just the sample window used for detection) --
-    this is what the Insight Agent (L3, Phase 4) turns into referential-
-    integrity findings rather than just proposing that a join exists.
-    """
-    left: str                  # "<file>::<table>.<column>"
-    right: str                 # "<file>::<table>.<column>"
-    target_column: str
-    match_basis: str
-    confidence: float
-    matched_count: int = 0
-    left_only_count: int = 0   # values on the left with no match on the right
-    right_only_count: int = 0  # values on the right with no match on the left
-
-
 class SourceTargetMapping(BaseModel):
-    columns: list[ColumnMapping] = []
-    joins: list[JoinRule] = []
+    """One entry per proposed BI table (see BITableProposal) -- the exact
+    source-column -> target-column mapping and join/FK-PK logic needed to
+    actually build it. Same list of tables as BIReport.business_use_cases;
+    this tab shows the ETL detail instead of the business framing.
+    """
+    tables: list[BITableProposal] = []
 
 
 class SynthesisOutput(BaseModel):
@@ -280,6 +297,7 @@ class AgentActivity(BaseModel):
 
 class Job(BaseModel):
     job_id: str = Field(default_factory=_id)
+    name: str | None = None  # user-assigned label; falls back to job_id in the UI when unset
     status: JobStatus = JobStatus.QUEUED
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)

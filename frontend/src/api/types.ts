@@ -29,13 +29,46 @@ export interface DataQuality {
   issues: string[];
 }
 
+export interface FileStats {
+  source_file: string;
+  category: string;
+  entities: number;
+  relations: number;
+  pii_findings: number;
+  financial_facts: number;
+  tables: number;
+  chunks: number;
+  summary?: string | null;
+}
+
+export interface BITableColumn {
+  target_column: string;
+  source_file: string;
+  source_table: string;
+  source_column: string;
+  data_type_guess: string;
+  sample_values: string[];
+}
+
+export interface BITableProposal {
+  name: string;
+  purpose: string;
+  grain: string;
+  source_files: string[];
+  columns: BITableColumn[];
+  join_logic?: string | null;
+  join_quality?: string | null;
+}
+
 export interface BIReport {
   executive_summary: string;
   key_entities: string[];
   financial_highlights: string[];
   risks: string[];
   market_signals: string[];
-  business_use_cases: BusinessIndex[];
+  corpus_overview: BusinessIndex[];
+  file_breakdown: FileStats[];
+  business_use_cases: BITableProposal[];
   data_quality: DataQuality[];
 }
 
@@ -88,29 +121,8 @@ export interface TableBlock {
   caption?: string | null;
 }
 
-export interface ColumnMapping {
-  source_file: string;
-  source_table: string;
-  source_column: string;
-  target_column: string;
-  data_type_guess: string;
-  sample_values: string[];
-}
-
-export interface JoinRule {
-  left: string;
-  right: string;
-  target_column: string;
-  match_basis: string;
-  confidence: number;
-  matched_count: number;
-  left_only_count: number;
-  right_only_count: number;
-}
-
 export interface SourceTargetMapping {
-  columns: ColumnMapping[];
-  joins: JoinRule[];
+  tables: BITableProposal[];
 }
 
 export interface SynthesisOutput {
@@ -134,6 +146,7 @@ export interface AgentActivity {
 
 export interface Job {
   job_id: string;
+  name?: string | null;
   status: JobStatusValue;
   created_at: string;
   updated_at: string;

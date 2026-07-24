@@ -31,6 +31,14 @@ export async function listJobs(): Promise<Job[]> {
   return req<Job[]>("/jobs");
 }
 
+export async function renameJob(jobId: string, name: string): Promise<Job> {
+  return req<Job>(`/jobs/${jobId}/name`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+}
+
 export async function getDataDumpTables(jobId: string): Promise<TableBlock[]> {
   return req<TableBlock[]>(`/outputs/${jobId}/data-dump/tables`);
 }

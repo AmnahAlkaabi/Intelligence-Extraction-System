@@ -105,13 +105,13 @@ class JobManager:
         neo4j_reachable = neo4j_ok
 
         job.status = JobStatus.PARSING
-        self._touch(job)
+        self.touch(job)
 
         async def _process_one(fp: str) -> DomainResult:
             async with semaphore:
                 progress = next(f for f in job.files if f.filename == fp)
                 progress.status = JobStatus.EXTRACTING
-                self._touch(job)
+                self.touch(job)
                 try:
                     result = await process_file(fp, unreachable_backends=unreachable_backends, job=job)
                     progress.status = JobStatus.COMPLETE
@@ -123,14 +123,14 @@ class JobManager:
                     progress.status = JobStatus.FAILED
                     progress.error = str(exc)
                     result = DomainResult(domain="unknown", source_file=fp, errors=[str(exc)])
-                self._touch(job)
+                self.touch(job)
                 return result
 
         results = await asyncio.gather(*(_process_one(fp) for fp in file_paths))
         self._domain_results[job_id] = results
 
         job.status = JobStatus.GRAPH_BUILD
-        self._touch(job)
+        self.touch(job)
         if neo4j_reachable:
             try:
                 await store.ensure_schema()
@@ -144,7 +144,7 @@ class JobManager:
             logger.info("Skipping graph ingest for job %s — Neo4j was unreachable at preflight.", job_id)
 
         job.status = JobStatus.SYNTHESIZING
-        self._touch(job)
+        self.touch(job)
         synth_activity = start_activity(job, "BI Synthesizer", "(all files)")
         try:
             synthesis_backend = llm_client.backend_for_role("synthesis")
@@ -167,9 +167,9 @@ class JobManager:
             job.status = JobStatus.FAILED
             job.error = str(exc)
             finish_activity(synth_activity, "failed")
-        self._touch(job)
+        self.touch(job)
 
-    def _touch(self, job: Job) -> None:
+    def touch(self, job: Job) -> None:
         job.updated_at = datetime.now(timezone.utc)
         done = sum(1 for f in job.files if f.status in (JobStatus.COMPLETE, JobStatus.FAILED))
         job.progress_pct = round(100.0 * done / max(len(job.files), 1) * 0.9, 1)  # reserve 10% for synth

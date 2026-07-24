@@ -21,7 +21,7 @@ export default function HistoryPage() {
       <div className="job-list">
         {jobs.map((job) => (
           <Link key={job.job_id} to={`/jobs/${job.job_id}`} className="job-row">
-            <span className="job-id">{job.job_id}</span>
+            <span className="job-id">{job.name || job.job_id}</span>
             <span className="job-files">{job.files.length} file(s)</span>
             <StatusBadge status={job.status} />
             <span className="job-date">{new Date(job.created_at).toLocaleString()}</span>

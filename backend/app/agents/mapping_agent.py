@@ -1,17 +1,21 @@
-"""Mapping Agent (L3) -- deterministic Source -> Target Mapping Sheet.
+"""Mapping Agent (L3) -- proposes BI-layer tables.
 
-Builds a literal data-dictionary/ETL table: every source column across
-every uploaded structured file (CSV/Excel/Database/JSON tables), mapped to
-a standardized target column name, plus join logic when the same
-standardized column shows up in more than one file's table with
-overlapping actual values. Purely structural (column names + sample
-values) -- no LLM call, same rationale as Business Use Cases and Data
-Quality: anything derivable from the data's own structure shouldn't be
-left to a model to guess.
+Every uploaded structured file (CSV/Excel/Database/JSON tables) is
+standardized into candidate target columns; where two files share a
+standardized column with real overlapping values (not just a name match),
+a cross-file joined table is proposed with explicit FK/PK join logic and
+measured join quality (executed over every row, not a sample). Files that
+don't join to anything still get a standalone standardized-table proposal.
+
+Purely structural (column names + sample values + row overlap) -- no LLM
+call, same rationale as Data Quality: anything derivable from the data's
+own structure shouldn't be left to a model to guess. This is what powers
+both the Business Use Cases tab (the "what for") and the Source -> Target
+Mapping tab (the "exactly how") -- same list of BITableProposal, two views.
 """
 import re
 
-from app.models.schemas import ColumnMapping, DomainResult, JoinRule, SourceTargetMapping, TableBlock
+from app.models.schemas import BITableColumn, BITableProposal, DomainResult, TableBlock
 
 # Canonical aliases: normalized token -> standardized token. A small,
 # hand-picked MVP set covering the most common business-entity columns;
@@ -33,6 +37,10 @@ _ALIASES = {
 }
 
 _ID_RE = re.compile(r"(^id$|_id$|^id_|_id_)")
+
+# Below this share of orphaned rows, a mismatch is treated as normal data
+# noise (e.g. a handful of test/void records) rather than a reportable gap.
+_ORPHAN_RATIO_THRESHOLD = 0.05
 
 
 def _tokenize(column: str) -> list[str]:
@@ -78,53 +86,71 @@ def _guess_type(column: str, samples: list[str]) -> str:
     return "text"
 
 
-def _table_label(result: DomainResult, table: TableBlock) -> str:
+def _table_label(source_file: str, table: TableBlock) -> str:
     name = table.sheet or table.caption or table.table_id
-    return f"{result.source_file}::{name}"
+    return f"{source_file}::{name}"
 
 
-def build_source_target_mapping(results: list[DomainResult]) -> SourceTargetMapping:
-    columns: list[ColumnMapping] = []
-    # target_column -> [(table label, column index, TableBlock, source_file)]
-    groups: dict[str, list[tuple[str, int, TableBlock, str]]] = {}
+def _short_name(source_file: str, table: TableBlock) -> str:
+    base = table.sheet or table.caption
+    if not base:
+        base = source_file.split("/")[-1].rsplit(".", 1)[0]
+    return base.replace("_", " ").strip().title()
+
+
+def _table_columns(source_file: str, label: str, table: TableBlock) -> list[BITableColumn]:
+    cols = []
+    for col_idx, header in enumerate(table.headers):
+        if not header or not header.strip():
+            continue
+        samples = [row[col_idx] for row in table.rows[:20] if col_idx < len(row) and row[col_idx]]
+        cols.append(BITableColumn(
+            target_column=standardize_column(header),
+            source_file=source_file,
+            source_table=label,
+            source_column=header,
+            data_type_guess=_guess_type(header, samples),
+            sample_values=samples[:5],
+        ))
+    return cols
+
+
+def build_bi_tables(results: list[DomainResult]) -> list[BITableProposal]:
+    # Flat list of every (result, table, label) with a header row, plus a
+    # target_column -> occurrences index for join detection.
+    entries: list[tuple[DomainResult, TableBlock, str]] = []
+    groups: dict[str, list[tuple[int, DomainResult, TableBlock, str]]] = {}
 
     for result in results:
         for table in result.tables:
             if not table.headers:
                 continue
-            label = _table_label(result, table)
+            label = _table_label(result.source_file, table)
+            entries.append((result, table, label))
             for col_idx, header in enumerate(table.headers):
                 if not header or not header.strip():
                     continue
-                samples = [
-                    row[col_idx] for row in table.rows[:20]
-                    if col_idx < len(row) and row[col_idx]
-                ]
                 target = standardize_column(header)
-                columns.append(ColumnMapping(
-                    source_file=result.source_file,
-                    source_table=label,
-                    source_column=header,
-                    target_column=target,
-                    data_type_guess=_guess_type(header, samples),
-                    sample_values=samples[:5],
-                ))
-                groups.setdefault(target, []).append((label, col_idx, table, result.source_file))
+                groups.setdefault(target, []).append((col_idx, result, table, label))
 
-    joins: list[JoinRule] = []
+    proposals: list[BITableProposal] = []
+    joined_keys: set[tuple[str, str]] = set()   # (source_file, table_id) already used in a join
+    seen_pairs: set[frozenset] = set()
+
     for target, occurrences in groups.items():
-        # Cross-file only: two sheets in the same file sharing a column
-        # name isn't the "linking multiple data" case this sheet exists
-        # for -- that's just one table, no join needed.
-        distinct_files = {o[3] for o in occurrences}
+        distinct_files = {r.source_file for _, r, _, _ in occurrences}
         if len(distinct_files) < 2:
             continue
         for i in range(len(occurrences)):
             for j in range(i + 1, len(occurrences)):
-                label_a, idx_a, table_a, file_a = occurrences[i]
-                label_b, idx_b, table_b, file_b = occurrences[j]
-                if file_a == file_b:
+                idx_a, result_a, table_a, label_a = occurrences[i]
+                idx_b, result_b, table_b, label_b = occurrences[j]
+                if result_a.source_file == result_b.source_file:
                     continue
+                pair_key = frozenset({(result_a.source_file, table_a.table_id), (result_b.source_file, table_b.table_id)})
+                if pair_key in seen_pairs:
+                    continue
+
                 values_a = {row[idx_a].strip().lower() for row in table_a.rows if idx_a < len(row) and row[idx_a]}
                 values_b = {row[idx_b].strip().lower() for row in table_b.rows if idx_b < len(row) and row[idx_b]}
                 if not values_a or not values_b:
@@ -135,16 +161,75 @@ def build_source_target_mapping(results: list[DomainResult]) -> SourceTargetMapp
                 # Require both a minimum absolute overlap and a minimum
                 # ratio -- name match alone (e.g. two unrelated "name"
                 # columns) isn't enough evidence of an actual join key.
-                if len(shared) >= 2 and overlap >= 0.05:
-                    joins.append(JoinRule(
-                        left=f"{label_a}.{table_a.headers[idx_a]}",
-                        right=f"{label_b}.{table_b.headers[idx_b]}",
-                        target_column=target,
-                        match_basis=f"column name -> '{target}'; {len(shared)} shared value(s), {overlap:.0%} overlap",
-                        confidence=round(min(overlap * 2, 1.0), 2),
-                        matched_count=len(shared),
-                        left_only_count=len(values_a - shared),
-                        right_only_count=len(values_b - shared),
-                    ))
+                if len(shared) < 2 or overlap < 0.05:
+                    continue
 
-    return SourceTargetMapping(columns=columns, joins=joins)
+                seen_pairs.add(pair_key)
+                joined_keys.add((result_a.source_file, table_a.table_id))
+                joined_keys.add((result_b.source_file, table_b.table_id))
+
+                # The side with more rows is the more likely "many"/FK side
+                # (e.g. many orders per customer); the smaller side is the
+                # "one"/PK side -- a simple, deterministic heuristic, not a
+                # guess about business meaning.
+                if len(table_a.rows) >= len(table_b.rows):
+                    child_label, child_table, child_idx = label_a, table_a, idx_a
+                    parent_label, parent_table, parent_idx = label_b, table_b, idx_b
+                    child_file, parent_file = result_a.source_file, result_b.source_file
+                    child_values, parent_values = values_a, values_b
+                    matched, child_only, parent_only = len(shared), len(values_a - shared), len(values_b - shared)
+                else:
+                    child_label, child_table, child_idx = label_b, table_b, idx_b
+                    parent_label, parent_table, parent_idx = label_a, table_a, idx_a
+                    child_file, parent_file = result_b.source_file, result_a.source_file
+                    child_values, parent_values = values_b, values_a
+                    matched, child_only, parent_only = len(shared), len(values_b - shared), len(values_a - shared)
+
+                child_name = _short_name(child_file, child_table)
+                parent_name = _short_name(parent_file, parent_table)
+                join_logic = (
+                    f"{child_label}.{child_table.headers[child_idx]} (FK) "
+                    f"-> {parent_label}.{parent_table.headers[parent_idx]} (PK)"
+                )
+                total_child = len(child_values)
+                quality_bits = [f"{matched} of {total_child} matched ({matched / total_child:.0%})" if total_child else f"{matched} matched"]
+                if total_child and child_only / total_child >= _ORPHAN_RATIO_THRESHOLD:
+                    quality_bits.append(f"{child_only} {child_name} row(s) reference an unknown {parent_name} key")
+                if parent_only:
+                    quality_bits.append(f"{parent_only} {parent_name} row(s) have no matching {child_name}")
+
+                columns = (
+                    _table_columns(child_file, child_label, child_table)
+                    + _table_columns(parent_file, parent_label, parent_table)
+                )
+                proposals.append(BITableProposal(
+                    name=f"{child_name} enriched with {parent_name}",
+                    purpose=f"Links every {child_name} record to its {parent_name} attributes via {target}, "
+                             f"so {child_name.lower()} can be analyzed by {parent_name.lower()} dimensions "
+                             f"without a manual join.",
+                    grain=f"One row per {child_name} record.",
+                    source_files=sorted({child_file, parent_file}),
+                    columns=columns,
+                    join_logic=join_logic,
+                    join_quality="; ".join(quality_bits),
+                ))
+
+    # Standalone tables: any table never used in a join above still gets a
+    # proposal, since a single cleaned/standardized table is still useful
+    # BI-layer output even without a cross-file link.
+    for result, table, label in entries:
+        key = (result.source_file, table.table_id)
+        if key in joined_keys:
+            continue
+        name = _short_name(result.source_file, table)
+        proposals.append(BITableProposal(
+            name=name,
+            purpose="Standardized single-source table -- no matching key found in another uploaded file.",
+            grain=f"One row per record in {label}.",
+            source_files=[result.source_file],
+            columns=_table_columns(result.source_file, label, table),
+            join_logic=None,
+            join_quality=None,
+        ))
+
+    return proposals
