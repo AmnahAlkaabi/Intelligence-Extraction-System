@@ -8,6 +8,7 @@ import csv
 import io
 import json
 import logging
+import shutil
 from pathlib import Path
 
 from app.config import get_settings
@@ -40,6 +41,15 @@ def job_output_dir(job_id: str) -> Path:
     d = output_dir / job_id
     d.mkdir(parents=True, exist_ok=True)
     return d
+
+
+def delete_job_files(job_id: str) -> None:
+    """Removes everything a job owns on disk -- its uploaded source files
+    and every generated output artifact (reports, CSVs, job_state.json).
+    Safe to call even if one or both directories were never created."""
+    upload_dir, output_dir = _ensure_dirs()
+    shutil.rmtree(upload_dir / job_id, ignore_errors=True)
+    shutil.rmtree(output_dir / job_id, ignore_errors=True)
 
 
 def write_job_state(job: Job) -> None:

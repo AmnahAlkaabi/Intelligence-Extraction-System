@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
-import { getJob } from "../api/client";
+import { useNavigate, useParams } from "react-router-dom";
+import { deleteJob, getJob } from "../api/client";
 import type { Job } from "../api/types";
 import { JobProgress } from "../components/JobProgress";
 import { AgentStatusPanel, activeAgentCount } from "../components/AgentStatusPanel";
@@ -34,8 +34,10 @@ export default function DashboardPage() {
   const [job, setJob] = useState<Job | null>(null);
   const [tab, setTab] = useState<Tab>("overview");
   const [err, setErr] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const pollRef = useRef<number | null>(null);
   const autoSwitchedRef = useRef(false);
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (!jobId) return;
@@ -70,6 +72,24 @@ export default function DashboardPage() {
   const showOutputs = hasResult || chatAvailable;
   const running = activeAgentCount(job.agent_activity);
 
+  async function handleDelete() {
+    if (isActive) {
+      alert(`This job is still ${job!.status} — wait for it to finish before deleting it.`);
+      return;
+    }
+    if (!confirm(`Delete "${job!.name || job!.job_id}"? This removes its uploaded files and all generated outputs. This can't be undone.`)) {
+      return;
+    }
+    setDeleting(true);
+    try {
+      await deleteJob(job!.job_id);
+      navigate("/history");
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Failed to delete job.");
+      setDeleting(false);
+    }
+  }
+
   return (
     <div className="page-wide">
       <div className="job-header-row">
@@ -79,6 +99,9 @@ export default function DashboardPage() {
           onRenamed={(name) => setJob((prev) => (prev ? { ...prev, name } : prev))}
         />
         <StatusBadge status={job.status} />
+        <button className="job-delete-btn job-delete-btn-inline" title="Delete job" disabled={deleting} onClick={handleDelete}>
+          {deleting ? "Deleting…" : "🗑 Delete"}
+        </button>
       </div>
 
       <CollapsibleSection title="Job Status" defaultOpen={isActive}>

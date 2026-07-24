@@ -22,6 +22,7 @@ from app.models.schemas import DomainResult, FileProgress, Job, JobStatus
 from app.parsers.router import classify
 from app.pipeline.agent_tracker import finish_activity, start_activity
 from app.storage.file_store import (
+    delete_job_files,
     load_all_job_states,
     write_graph_json,
     write_job_state,
@@ -33,6 +34,11 @@ from app.storage.file_store import (
 )
 
 logger = logging.getLogger(__name__)
+
+_ACTIVE_STATUSES = {
+    JobStatus.QUEUED, JobStatus.PARSING, JobStatus.EXTRACTING,
+    JobStatus.GRAPH_BUILD, JobStatus.SYNTHESIZING,
+}
 
 
 class JobManager:
@@ -71,6 +77,24 @@ class JobManager:
 
     def get_domain_results(self, job_id: str) -> list[DomainResult]:
         return self._domain_results.get(job_id, [])
+
+    def delete_job(self, job_id: str) -> bool:
+        """Removes a job's in-memory state; the caller is responsible for
+        deleting its on-disk files and Neo4j graph nodes (both I/O -- the
+        former sync, the latter async -- so they don't belong on this
+        otherwise-sync manager). Returns False if the job doesn't exist;
+        raises ValueError if it's still actively processing, since deleting
+        out from under a running asyncio task would leave that task writing
+        state for a job the registry no longer knows about."""
+        job = self._jobs.get(job_id)
+        if job is None:
+            return False
+        if job.status in _ACTIVE_STATUSES:
+            raise ValueError(f"Job {job_id} is still {job.status.value} — wait for it to finish or fail before deleting it.")
+        self._jobs.pop(job_id, None)
+        self._domain_results.pop(job_id, None)
+        self._tasks.pop(job_id, None)
+        return True
 
     def start(self, job_id: str, file_paths: list[str]) -> None:
         task = asyncio.create_task(self._run(job_id, file_paths))

@@ -4,12 +4,12 @@ import { StatusBadge } from "./StatusBadge";
 
 const TRUNCATE_AT = 110;
 
-function ErrorText({ text }: { text: string }) {
+export function ErrorText({ text, className = "progress-file-error" }: { text: string; className?: string }) {
   const [expanded, setExpanded] = useState(false);
   const isLong = text.length > TRUNCATE_AT;
   const shown = expanded || !isLong ? text : text.slice(0, TRUNCATE_AT) + "…";
   return (
-    <div className="progress-file-error">
+    <div className={className}>
       <span>{shown}</span>
       {isLong && (
         <button className="error-toggle" onClick={() => setExpanded((e) => !e)}>

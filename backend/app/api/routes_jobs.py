@@ -1,8 +1,14 @@
+import logging
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from app.graph.neo4j_client import get_store
 from app.models.schemas import Job
 from app.pipeline.job_manager import get_job_manager
+from app.storage.file_store import delete_job_files
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["jobs"])
 
@@ -33,3 +39,19 @@ async def rename_job(job_id: str, body: RenameJobRequest) -> Job:
     job.name = name or None
     get_job_manager().touch(job)
     return job
+
+
+@router.delete("/jobs/{job_id}", status_code=204)
+async def delete_job(job_id: str) -> None:
+    try:
+        existed = get_job_manager().delete_job(job_id)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    if not existed:
+        raise HTTPException(404, "Job not found.")
+
+    delete_job_files(job_id)
+    try:
+        await get_store().delete_job(job_id)
+    except Exception:
+        logger.exception("Neo4j cleanup failed for deleted job %s — graph nodes may be orphaned.", job_id)

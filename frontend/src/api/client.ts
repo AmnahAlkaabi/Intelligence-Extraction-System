@@ -39,6 +39,20 @@ export async function renameJob(jobId: string, name: string): Promise<Job> {
   });
 }
 
+export async function deleteJob(jobId: string): Promise<void> {
+  const res = await fetch(`${BASE}/jobs/${jobId}`, { method: "DELETE" });
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const body = await res.json();
+      detail = body.detail || detail;
+    } catch {
+      // ignore -- e.g. a 204 has no body to parse
+    }
+    throw new Error(`${res.status}: ${detail}`);
+  }
+}
+
 export async function getDataDumpTables(jobId: string): Promise<TableBlock[]> {
   return req<TableBlock[]>(`/outputs/${jobId}/data-dump/tables`);
 }

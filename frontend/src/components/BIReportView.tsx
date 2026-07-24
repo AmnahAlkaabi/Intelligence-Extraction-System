@@ -1,4 +1,5 @@
 import type { BIReport, ColumnQuality } from "../api/types";
+import { ErrorText } from "./JobProgress";
 
 function qualityClass(score: number): string {
   if (score >= 90) return "dq-good";
@@ -129,7 +130,9 @@ export function BIReportView({ report }: { report: BIReport }) {
               </div>
               {q.issues.length > 0 && (
                 <ul className="dq-issues">
-                  {q.issues.map((issue, i) => <li key={i}>{issue}</li>)}
+                  {q.issues.map((issue, i) => (
+                    <li key={i}><ErrorText text={issue} className="dq-issue-text" /></li>
+                  ))}
                 </ul>
               )}
               {q.tables.length > 0 && (
