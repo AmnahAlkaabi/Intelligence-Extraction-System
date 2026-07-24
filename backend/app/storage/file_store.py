@@ -11,7 +11,7 @@ import logging
 from pathlib import Path
 
 from app.config import get_settings
-from app.models.schemas import SynthesisOutput, TableBlock
+from app.models.schemas import Job, SynthesisOutput, TableBlock
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +40,32 @@ def job_output_dir(job_id: str) -> Path:
     d = output_dir / job_id
     d.mkdir(parents=True, exist_ok=True)
     return d
+
+
+def write_job_state(job: Job) -> None:
+    """Snapshots the job's own state (status, per-file progress, agent
+    activity, and -- once complete -- the full result) to disk on every
+    meaningful change, so job history survives a backend restart instead
+    of living only in the in-memory registry.
+    """
+    path = job_output_dir(job.job_id) / "job_state.json"
+    path.write_text(job.model_dump_json(), encoding="utf-8")
+
+
+def load_all_job_states() -> list[Job]:
+    _, output_dir = _ensure_dirs()
+    jobs: list[Job] = []
+    if not output_dir.exists():
+        return jobs
+    for job_dir in sorted(output_dir.iterdir()):
+        state_path = job_dir / "job_state.json"
+        if not state_path.exists():
+            continue
+        try:
+            jobs.append(Job.model_validate_json(state_path.read_text(encoding="utf-8")))
+        except Exception:
+            logger.exception("Failed to load persisted job state from %s", state_path)
+    return jobs
 
 
 def write_json_report(job_id: str, output: SynthesisOutput) -> str:

@@ -1,10 +1,13 @@
 """Master Orchestrator (L0) — job lifecycle: dispatch files to domain \
 managers, track completion, trigger the Synthesiser, persist outputs.
 
-An in-memory job registry is sufficient for a single-node air-gapped
-deployment; job state is also durably reflected on disk via the written
-report artifacts so results survive a process restart even though the
-live progress tracker does not.
+The live registry is in-memory, but every meaningful state change is also
+snapshotted to disk (job_state.json per job, see storage/file_store.py) so
+job history -- including completed results -- survives a backend restart.
+A job caught mid-processing when the process restarts can't resume (no
+in-flight asyncio task survives a restart), so it's loaded back as FAILED
+with an explanatory message rather than shown stuck at its last progress
+forever.
 """
 import asyncio
 import logging
@@ -19,7 +22,9 @@ from app.models.schemas import DomainResult, FileProgress, Job, JobStatus
 from app.parsers.router import classify
 from app.pipeline.agent_tracker import finish_activity, start_activity
 from app.storage.file_store import (
+    load_all_job_states,
     write_graph_json,
+    write_job_state,
     write_json_report,
     write_mapping_csv,
     write_markdown_report,
@@ -41,6 +46,7 @@ class JobManager:
             FileProgress(filename=fp, category=classify(fp), status=JobStatus.QUEUED) for fp in file_paths
         ])
         self._jobs[job.job_id] = job
+        write_job_state(job)
         return job
 
     def get_job(self, job_id: str) -> Job | None:
@@ -48,6 +54,20 @@ class JobManager:
 
     def list_jobs(self) -> list[Job]:
         return sorted(self._jobs.values(), key=lambda j: j.created_at, reverse=True)
+
+    def load_persisted_jobs(self) -> None:
+        """Called once at startup. Jobs that were still processing when the
+        server stopped can't resume (their asyncio task is gone), so they're
+        loaded back as FAILED with a clear reason instead of appearing
+        forever stuck at their last progress percentage.
+        """
+        for job in load_all_job_states():
+            if job.status not in (JobStatus.COMPLETE, JobStatus.FAILED):
+                job.status = JobStatus.FAILED
+                job.error = "Processing was interrupted by a server restart before this job finished."
+            self._jobs[job.job_id] = job
+        if self._jobs:
+            logger.info("Restored %d job(s) from disk.", len(self._jobs))
 
     def get_domain_results(self, job_id: str) -> list[DomainResult]:
         return self._domain_results.get(job_id, [])
@@ -153,6 +173,7 @@ class JobManager:
         job.updated_at = datetime.now(timezone.utc)
         done = sum(1 for f in job.files if f.status in (JobStatus.COMPLETE, JobStatus.FAILED))
         job.progress_pct = round(100.0 * done / max(len(job.files), 1) * 0.9, 1)  # reserve 10% for synth
+        write_job_state(job)
 
 
 _manager_singleton: JobManager | None = None

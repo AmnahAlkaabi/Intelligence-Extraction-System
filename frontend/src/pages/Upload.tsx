@@ -80,7 +80,7 @@ export default function UploadPage() {
       </div>
 
       {files.length > 0 && (
-        <div className="file-list">
+        <div className="file-list scroll-list">
           {files.map((f, i) => (
             <div key={`${f.name}-${i}`} className="file-row">
               <span className="file-name">{f.name}</span>

@@ -71,27 +71,28 @@ const STATUS_LABEL: Record<RowStatus, string> = {
   skipped: "Skipped",
 };
 
+export function activeAgentCount(activity: AgentActivity[]): number {
+  return activity.filter((a) => a.status === "running").length;
+}
+
 export function AgentStatusPanel({ activity }: { activity: AgentActivity[] }) {
-  if (activity.length === 0) return null;
+  if (activity.length === 0) return <p className="muted">No agent activity yet.</p>;
   const rows = summarize(activity);
 
   return (
-    <div className="agent-status-panel">
-      <div className="agent-status-title">Agent Status</div>
-      <div className="agent-status-list">
-        {rows.map((r) => (
-          <div key={r.agent} className="agent-status-row">
-            <span className={`agent-status-dot agent-status-dot-${r.status}`} />
-            <span className="agent-status-name">{r.agent}</span>
-            <span className={`agent-status-pill agent-status-pill-${r.status}`}>{STATUS_LABEL[r.status]}</span>
-            <span className="agent-status-count">{r.done}/{r.total} file{r.total === 1 ? "" : "s"}</span>
-            <span className={`agent-status-duration${r.slow ? " agent-status-duration-slow" : ""}`}>
-              {fmtMs(r.maxDurationMs)}
-              {r.slow && <span className="agent-status-slow-tag" title="Slower than the rest of this run — worth tuning">slow</span>}
-            </span>
-          </div>
-        ))}
-      </div>
+    <div className="agent-status-list scroll-list">
+      {rows.map((r) => (
+        <div key={r.agent} className="agent-status-row">
+          <span className={`agent-status-dot agent-status-dot-${r.status}`} />
+          <span className="agent-status-name">{r.agent}</span>
+          <span className={`agent-status-pill agent-status-pill-${r.status}`}>{STATUS_LABEL[r.status]}</span>
+          <span className="agent-status-count">{r.done}/{r.total} file{r.total === 1 ? "" : "s"}</span>
+          <span className={`agent-status-duration${r.slow ? " agent-status-duration-slow" : ""}`}>
+            {fmtMs(r.maxDurationMs)}
+            {r.slow && <span className="agent-status-slow-tag" title="Slower than the rest of this run — worth tuning">slow</span>}
+          </span>
+        </div>
+      ))}
     </div>
   );
 }

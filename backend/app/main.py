@@ -10,6 +10,7 @@ from app.api.routes_jobs import router as jobs_router
 from app.api.routes_outputs import router as outputs_router
 from app.config import get_settings
 from app.graph.neo4j_client import get_store
+from app.pipeline.job_manager import get_job_manager
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -18,6 +19,7 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
+    get_job_manager().load_persisted_jobs()
     try:
         await get_store().ensure_schema()
         logger.info("Neo4j schema/vector index verified at startup.")

@@ -1,5 +1,24 @@
+import { useState } from "react";
 import type { Job } from "../api/types";
 import { StatusBadge } from "./StatusBadge";
+
+const TRUNCATE_AT = 110;
+
+function ErrorText({ text }: { text: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const isLong = text.length > TRUNCATE_AT;
+  const shown = expanded || !isLong ? text : text.slice(0, TRUNCATE_AT) + "…";
+  return (
+    <div className="progress-file-error">
+      <span>{shown}</span>
+      {isLong && (
+        <button className="error-toggle" onClick={() => setExpanded((e) => !e)}>
+          {expanded ? "show less" : "show more"}
+        </button>
+      )}
+    </div>
+  );
+}
 
 export function JobProgress({ job }: { job: Job }) {
   return (
@@ -23,25 +42,23 @@ export function JobProgress({ job }: { job: Job }) {
         </div>
         <span className="progress-pct">{job.progress_pct.toFixed(0)}%</span>
       </div>
-      <div className="progress-files">
+      <div className="progress-files scroll-list">
         {job.files.map((f) => (
           <div key={f.filename} className="progress-file-row">
-            <span className={`ft-dot ft-dot-${f.category}`} />
-            <span className="progress-file-name" title={f.filename}>
-              {f.filename.split("/").pop()}
-            </span>
-            <StatusBadge status={f.status} />
-            {f.translated && (
-              <span className="translated-chip" title={`Translated from '${f.detected_language}' to English before extraction`}>
-                translated: {f.detected_language}
+            <div className="progress-file-main">
+              <span className={`ft-dot ft-dot-${f.category}`} />
+              <span className="progress-file-name" title={f.filename}>
+                {f.filename.split("/").pop()}
               </span>
-            )}
-            {f.error && <span className="progress-file-error">{f.error}</span>}
-            {f.warnings.length > 0 && (
-              <span className="progress-file-error" title={f.warnings.join("; ")}>
-                {f.warnings[0]}{f.warnings.length > 1 ? ` (+${f.warnings.length - 1} more)` : ""}
-              </span>
-            )}
+              <StatusBadge status={f.status} />
+              {f.translated && (
+                <span className="translated-chip" title={`Translated from '${f.detected_language}' to English before extraction`}>
+                  translated: {f.detected_language}
+                </span>
+              )}
+            </div>
+            {f.error && <ErrorText text={f.error} />}
+            {f.warnings.length > 0 && <ErrorText text={f.warnings.join(" · ")} />}
           </div>
         ))}
       </div>
