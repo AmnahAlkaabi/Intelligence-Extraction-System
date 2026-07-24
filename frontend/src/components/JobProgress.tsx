@@ -31,6 +31,11 @@ export function JobProgress({ job }: { job: Job }) {
               {f.filename.split("/").pop()}
             </span>
             <StatusBadge status={f.status} />
+            {f.translated && (
+              <span className="translated-chip" title={`Translated from '${f.detected_language}' to English before extraction`}>
+                translated: {f.detected_language}
+              </span>
+            )}
             {f.error && <span className="progress-file-error">{f.error}</span>}
             {f.warnings.length > 0 && (
               <span className="progress-file-error" title={f.warnings.join("; ")}>

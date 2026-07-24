@@ -11,6 +11,8 @@ export interface FileProgress {
   status: JobStatusValue;
   error?: string | null;
   warnings: string[];
+  detected_language?: string | null;
+  translated: boolean;
 }
 
 export interface BusinessIndex {

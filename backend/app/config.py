@@ -25,9 +25,17 @@ class Settings(BaseSettings):
     role_extraction: str = "qwen"       # NER / PII / financial / relation agents
     role_synthesis: str = "kimi"        # final report + knowledge-graph merge
     role_chat: str = "kimi"             # interactive Q&A over the graph
+    role_translation: str = "qwen"      # non-English -> English preprocessing, before extraction
 
     llm_request_timeout_s: int = 180
     llm_max_retries: int = 3
+
+    # --- Translation (Phase 2 preprocessing) ---
+    translation_target_lang: str = "en"
+    # Below this char count, language detection is unreliable -- skip
+    # translation rather than risk mistranslating a short English snippet
+    # that langdetect misclassifies.
+    translation_min_chars: int = 40
 
     # --- BGE embeddings (local, no network) ---
     embedding_model_name: str = "BAAI/bge-large-en-v1.5"

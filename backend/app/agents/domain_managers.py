@@ -15,6 +15,7 @@ import logging
 from app.agents.chunking import chunk_and_embed
 from app.agents.data_quality import assess_quality
 from app.agents.extraction import run_financial, run_ner, run_pii, run_relations, run_summary
+from app.agents.translation import translate_document
 from app.llm.client import get_llm_client
 from app.models.schemas import DomainResult, FileCategory
 from app.parsers.router import parse_file
@@ -38,7 +39,11 @@ async def process_file(file_path: str, unreachable_backends: set[str] | None = N
     """
     unreachable_backends = unreachable_backends or set()
     doc = await parse_file(file_path)
-    result = DomainResult(domain=doc.category.value, source_file=file_path, tables=doc.tables)
+    doc = await translate_document(doc, unreachable_backends)
+    result = DomainResult(
+        domain=doc.category.value, source_file=file_path, tables=doc.tables,
+        detected_language=doc.detected_language, translated=doc.translated,
+    )
 
     if doc.warnings:
         result.errors.extend(doc.warnings)

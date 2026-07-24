@@ -1,2 +1,7 @@
 # Utilities
 python-dotenv==1.0.1
+
+# Language detection for the Translator agent (Phase 2 preprocessing) --
+# pure-Python port of Google's language-detection library, no model
+# download / network call required.
+langdetect==1.0.9

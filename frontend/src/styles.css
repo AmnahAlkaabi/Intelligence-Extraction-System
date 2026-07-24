@@ -120,6 +120,10 @@ a { color: var(--accent); text-decoration: none; }
 .progress-file-row { display: flex; align-items: center; gap: 10px; font-size: 12px; }
 .progress-file-name { flex: 1; font-family: monospace; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .progress-file-error { color: var(--danger); font-size: 11px; }
+.translated-chip {
+  flex: 0 0 auto; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;
+  color: var(--accent); background: rgba(74,158,255,0.12); border-radius: 4px; padding: 2px 6px;
+}
 .ft-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); flex-shrink: 0; }
 .ft-dot-pdf { background: var(--danger); }
 .ft-dot-image { background: #ff9c2e; }

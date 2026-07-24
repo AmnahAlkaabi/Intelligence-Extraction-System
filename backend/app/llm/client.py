@@ -53,6 +53,7 @@ class LLMClient:
             "extraction": settings.role_extraction,
             "synthesis": settings.role_synthesis,
             "chat": settings.role_chat,
+            "translation": settings.role_translation,
         }
 
     def backend_for_role(self, role: str) -> str:

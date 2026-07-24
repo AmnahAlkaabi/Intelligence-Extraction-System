@@ -74,6 +74,13 @@ class ParsedDocument(BaseModel):
     tables: list[TableBlock] = []
     metadata: dict = {}
     warnings: list[str] = []
+    # Set by the Translator agent (L1.5 preprocessing, runs on Qwen) when
+    # the detected source language isn't the target language -- text_blocks
+    # are translated in place, original language is kept here for
+    # provenance. None means "no translation attempted" (already-English or
+    # too little text to reliably detect).
+    detected_language: str | None = None
+    translated: bool = False
 
     def full_text(self) -> str:
         return "\n".join(b.text for b in self.text_blocks if b.text.strip())
@@ -150,6 +157,8 @@ class DomainResult(BaseModel):
     summary: str | None = None
     errors: list[str] = []
     quality: DataQuality | None = None
+    detected_language: str | None = None
+    translated: bool = False
 
 
 # -------------------------------------------------------------- synthesis --
@@ -209,6 +218,8 @@ class FileProgress(BaseModel):
     status: JobStatus = JobStatus.QUEUED
     error: str | None = None
     warnings: list[str] = []   # e.g. "NER/PII/Financial/Relation skipped: Qwen unreachable"
+    detected_language: str | None = None
+    translated: bool = False
 
 
 class Job(BaseModel):

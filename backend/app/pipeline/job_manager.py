@@ -94,6 +94,8 @@ class JobManager:
                     result = await process_file(fp, unreachable_backends=unreachable_backends)
                     progress.status = JobStatus.COMPLETE
                     progress.warnings = result.errors
+                    progress.detected_language = result.detected_language
+                    progress.translated = result.translated
                 except Exception as exc:  # noqa: BLE001
                     logger.exception("Processing failed for %s", fp)
                     progress.status = JobStatus.FAILED
