@@ -37,8 +37,27 @@ async def answer_question(job_id: str, message: str, history: list[ChatMessage])
     embedder = get_embedder()
     store = get_store()
 
-    query_vec = await embedder.embed_query(message)
-    hits = await store.vector_search(job_id, query_vec, top_k=8)
+    # Fast preflight, same rationale as the chat-model check below: a dead
+    # or unauthorized Neo4j should surface as a clear degraded-mode answer
+    # in ~8s, not bubble up as an unhandled exception -> 500 from the route.
+    neo4j_reachable, neo4j_detail = await store.check_reachable(timeout_s=8.0)
+    if not neo4j_reachable:
+        return ChatResponse(
+            answer=f"The knowledge graph is currently unreachable: {neo4j_detail} "
+                   f"Verify Neo4j is up and the credentials match, then try again.",
+            citations=[], uncertain=True,
+        )
+
+    try:
+        query_vec = await embedder.embed_query(message)
+        hits = await store.vector_search(job_id, query_vec, top_k=8)
+    except Exception:
+        logger.exception("Vector search failed for job %s", job_id)
+        return ChatResponse(
+            answer="Retrieval from the knowledge graph failed unexpectedly. "
+                   "Check the backend logs for details, then try again.",
+            citations=[], uncertain=True,
+        )
 
     if not hits:
         return ChatResponse(
@@ -48,7 +67,11 @@ async def answer_question(job_id: str, message: str, history: list[ChatMessage])
         )
 
     chunk_ids = [h["chunk_id"] for h in hits]
-    graph_facts = await store.expand_entities_for_chunks(job_id, chunk_ids)
+    try:
+        graph_facts = await store.expand_entities_for_chunks(job_id, chunk_ids)
+    except Exception:
+        logger.exception("Graph expansion failed for job %s", job_id)
+        graph_facts = []
 
     context_parts = ["--- Retrieved passages ---"]
     for h in hits:
