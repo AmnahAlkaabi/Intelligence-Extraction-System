@@ -95,6 +95,17 @@ export interface SynthesisOutput {
   data_dump: { tables: TableBlock[]; files_processed: string[]; chunk_count: number };
 }
 
+export type AgentActivityStatus = "running" | "completed" | "failed" | "skipped";
+
+export interface AgentActivity {
+  agent: string;
+  file: string;
+  status: AgentActivityStatus;
+  started_at: string;
+  finished_at?: string | null;
+  duration_ms?: number | null;
+}
+
 export interface Job {
   job_id: string;
   status: JobStatusValue;
@@ -105,6 +116,7 @@ export interface Job {
   result: SynthesisOutput | null;
   error?: string | null;
   warnings: string[];
+  agent_activity: AgentActivity[];
 }
 
 export interface ChatMessage {

@@ -17,6 +17,7 @@ from app.graph.neo4j_client import get_store
 from app.llm.client import get_llm_client
 from app.models.schemas import DomainResult, FileProgress, Job, JobStatus
 from app.parsers.router import classify
+from app.pipeline.agent_tracker import finish_activity, start_activity
 from app.storage.file_store import (
     write_graph_json,
     write_json_report,
@@ -91,7 +92,7 @@ class JobManager:
                 progress.status = JobStatus.EXTRACTING
                 self._touch(job)
                 try:
-                    result = await process_file(fp, unreachable_backends=unreachable_backends)
+                    result = await process_file(fp, unreachable_backends=unreachable_backends, job=job)
                     progress.status = JobStatus.COMPLETE
                     progress.warnings = result.errors
                     progress.detected_language = result.detected_language
@@ -123,10 +124,12 @@ class JobManager:
 
         job.status = JobStatus.SYNTHESIZING
         self._touch(job)
+        synth_activity = start_activity(job, "BI Synthesizer", "(all files)")
         try:
             synthesis_backend = llm_client.backend_for_role("synthesis")
             output = await synthesize(results, skip_llm=synthesis_backend in unreachable_backends)
             job.result = output
+            finish_activity(synth_activity, "completed")
 
             write_json_report(job_id, output)
             write_markdown_report(job_id, output)
@@ -141,6 +144,7 @@ class JobManager:
             logger.exception("Synthesis failed for job %s", job_id)
             job.status = JobStatus.FAILED
             job.error = str(exc)
+            finish_activity(synth_activity, "failed")
         self._touch(job)
 
     def _touch(self, job: Job) -> None:

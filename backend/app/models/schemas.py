@@ -222,6 +222,21 @@ class FileProgress(BaseModel):
     translated: bool = False
 
 
+class AgentActivity(BaseModel):
+    """One agent's execution span on one file (or "(all files)" for
+    job-level stages like synthesis) -- powers the live agent-status panel
+    so a slow/stuck agent is visible immediately instead of only inferred
+    from the overall progress bar not moving, and so run-to-run durations
+    can be compared later when tuning for a given deployment's document mix.
+    """
+    agent: str
+    file: str
+    status: str = "running"     # running | completed | failed | skipped
+    started_at: datetime = Field(default_factory=datetime.utcnow)
+    finished_at: datetime | None = None
+    duration_ms: int | None = None
+
+
 class Job(BaseModel):
     job_id: str = Field(default_factory=_id)
     status: JobStatus = JobStatus.QUEUED
@@ -238,6 +253,7 @@ class Job(BaseModel):
     # synthesis/chat might be limited instead of watching progress stall
     # with no explanation.
     warnings: list[str] = []
+    agent_activity: list[AgentActivity] = []
 
 
 # -------------------------------------------------------------------- chat --

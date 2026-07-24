@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 import { getJob } from "../api/client";
 import type { Job } from "../api/types";
 import { JobProgress } from "../components/JobProgress";
+import { AgentStatusPanel } from "../components/AgentStatusPanel";
 import { BIReportView } from "../components/BIReportView";
 import { PIIReportView } from "../components/PIIReportView";
 import { KnowledgeGraphView } from "../components/KnowledgeGraphView";
@@ -60,6 +61,7 @@ export default function DashboardPage() {
     <div className="page-wide">
       <h1 className="page-title mono-id">Job {job.job_id}</h1>
       <JobProgress job={job} />
+      <AgentStatusPanel activity={job.agent_activity} />
 
       {job.status === "complete" && job.result && (
         <div className="tabs">

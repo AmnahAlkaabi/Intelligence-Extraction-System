@@ -124,6 +124,36 @@ a { color: var(--accent); text-decoration: none; }
   flex: 0 0 auto; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;
   color: var(--accent); background: rgba(74,158,255,0.12); border-radius: 4px; padding: 2px 6px;
 }
+.agent-status-panel { background: var(--bg2); border: 1px solid var(--line); border-radius: 6px; padding: 16px 18px; margin-bottom: 24px; }
+.agent-status-title { font-size: 12px; letter-spacing: 1px; text-transform: uppercase; color: var(--accent); margin-bottom: 12px; }
+.agent-status-list { display: flex; flex-direction: column; gap: 8px; }
+.agent-status-row { display: flex; align-items: center; gap: 10px; font-size: 12px; }
+.agent-status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.agent-status-dot-running { background: var(--accent); animation: pulse-dot 1.4s ease-in-out infinite; }
+.agent-status-dot-completed { background: var(--accent2); }
+.agent-status-dot-failed { background: var(--danger); }
+.agent-status-dot-skipped { background: var(--dim); }
+@keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+.agent-status-name { flex: 1; font-family: monospace; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-status-pill {
+  font-size: 10px; letter-spacing: 0.5px; text-transform: uppercase; padding: 3px 8px;
+  border-radius: 10px; white-space: nowrap; flex-shrink: 0;
+}
+.agent-status-pill-running { background: rgba(74,158,255,0.12); color: var(--accent); }
+.agent-status-pill-completed { background: rgba(0,232,122,0.12); color: var(--accent2); }
+.agent-status-pill-failed { background: rgba(255,79,79,0.12); color: var(--danger); }
+.agent-status-pill-skipped { background: var(--bg3); color: var(--muted); }
+.agent-status-count { color: var(--muted); font-size: 11px; flex-shrink: 0; width: 70px; }
+.agent-status-duration {
+  font-family: monospace; font-variant-numeric: tabular-nums; color: var(--muted);
+  font-size: 11px; flex-shrink: 0; width: 90px; display: flex; align-items: center; gap: 6px;
+}
+.agent-status-duration-slow { color: var(--warn); }
+.agent-status-slow-tag {
+  font-size: 9px; letter-spacing: 0.5px; text-transform: uppercase; padding: 1px 5px;
+  border-radius: 4px; background: rgba(245,200,66,0.15); color: var(--warn);
+}
+
 .ft-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); flex-shrink: 0; }
 .ft-dot-pdf { background: var(--danger); }
 .ft-dot-image { background: #ff9c2e; }
