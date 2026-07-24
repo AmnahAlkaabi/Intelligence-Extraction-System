@@ -27,7 +27,11 @@ services:
     # docker-build.yml on every push), then `docker compose up -d` runs it
     # without ever invoking `build:` locally. Only falls back to a local
     # build if you explicitly run `docker compose up --build`.
+    # pull_policy: always -- without this, `docker compose pull` skips any
+    # service that also has a `build:` section ("Skipped - Image is already
+    # being built"), assuming you intend to build it yourself.
     image: ghcr.io/ankitsingh1323-web/intelligence-extraction-system-backend:latest
+    pull_policy: always
     build:
       context: ./backend
       args:
@@ -48,6 +52,7 @@ services:
 
   frontend:
     image: ghcr.io/ankitsingh1323-web/intelligence-extraction-system-frontend:latest
+    pull_policy: always
     build:
       context: ./frontend
     container_name: iex-frontend
