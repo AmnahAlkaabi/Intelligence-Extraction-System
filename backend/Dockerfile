@@ -83,20 +83,53 @@ RUN pip uninstall -y hf_xet || true
 ARG EMBEDDING_MODEL_NAME=BAAI/bge-large-en-v1.5
 RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('${EMBEDDING_MODEL_NAME}')"
 
-# Pre-fetch Docling's layout-detection model artifacts (downloaded from HF
-# Hub on first use) into the image, mirroring the exact pipeline config used
-# at runtime (app/parsers/pdf_parser.py) so this also warms/validates the
-# RapidOCR ONNX session. RapidOCR's own detection/recognition/classification
-# models ship inside the rapidocr-onnxruntime wheel already installed above,
-# so this step triggers no network call for the OCR side — only for Docling's
-# layout model.
+# Pre-fetch Docling's layout + table-structure model artifacts (a single HF
+# Hub repo, ds4sd/docling-models) into the image, mirroring the exact
+# pipeline config used at runtime (app/parsers/pdf_parser.py). RapidOCR's
+# own detection/recognition/classification models ship inside the
+# rapidocr-onnxruntime wheel already installed above, so this step triggers
+# no network call for the OCR side — only for Docling's layout/table model.
+#
+# IMPORTANT: merely constructing DocumentConverter(...) does NOT download
+# anything — docling/document_converter.py builds it as an empty shell
+# (self.initialized_pipelines = {}) and only downloads model weights
+# lazily, inside StandardPdfPipeline.__init__ -> download_models_hf(),
+# the first time a real conversion actually runs a PDF/image through that
+# pipeline. An earlier version of this step called only the bare
+# constructor, which built and shipped successfully every time while
+# silently caching nothing — the exact failure mode a user hit here
+# (a live snapshot_download() attempt from inside pdf_parser.py's
+# .convert() call, on a host with no route to huggingface.co) was masked
+# until someone's first real PDF upload, on a container that could be
+# months old. Call .initialize_pipeline(...) explicitly below so this step
+# does what its name says: it forces the same model download the real
+# pipeline needs, during the build, where a failure is loud and fixable —
+# not on a user's first PDF upload on an already-shipped air-gapped host.
+#
+# No `|| true`: if this download fails, the image must NOT ship anyway and
+# silently defer the failure to that first PDF upload. Let the build fail
+# here, loudly, on a connected machine where it's actually fixable (see
+# the corporate-CA note above).
 RUN python -c "\
 from docling.datamodel.base_models import InputFormat; \
 from docling.datamodel.pipeline_options import PdfPipelineOptions, RapidOcrOptions; \
 from docling.document_converter import DocumentConverter, PdfFormatOption; \
 opts = PdfPipelineOptions(); \
 opts.ocr_options = RapidOcrOptions(); \
-DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=opts)})" || true
+conv = DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=opts)}); \
+conv.initialize_pipeline(InputFormat.PDF); \
+print('Docling model artifacts cached OK.')"
+
+# Force offline mode from here on, for every process the final image runs.
+# Set only *after* the model pre-fetch steps above (which still need
+# network to populate the cache) -- once set, huggingface_hub/transformers
+# will never attempt a live download again, no matter what. A cache miss
+# then fails immediately with a clear local "not found, offline mode"
+# error instead of a slow, confusing live attempt against a CDN the
+# air-gapped host was never supposed to be able to reach in the first
+# place.
+ENV HF_HUB_OFFLINE=1
+ENV TRANSFORMERS_OFFLINE=1
 
 COPY app ./app
 

@@ -10,6 +10,8 @@ from app.api.routes_jobs import router as jobs_router
 from app.api.routes_outputs import router as outputs_router
 from app.config import get_settings
 from app.graph.neo4j_client import get_store
+from app.models.schemas import FileCategory
+from app.parsers.router import warm_parser
 from app.pipeline.job_manager import get_job_manager
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -27,6 +29,17 @@ async def lifespan(app: FastAPI):
         logger.exception(
             "Could not reach Neo4j at %s during startup — will retry when the first job runs.",
             settings.neo4j_uri,
+        )
+    try:
+        warm_parser(FileCategory.PDF)
+        logger.info("Docling model cache verified at startup — PDF parsing is ready.")
+    except Exception:
+        logger.exception(
+            "Docling's layout model is not present in this image's local cache, and the "
+            "container runs with HF_HUB_OFFLINE=1 so it will never try to download it. "
+            "Every PDF upload will fail until the backend image is rebuilt on a machine with "
+            "working network access to huggingface.co (see the corporate-CA note in "
+            "backend/Dockerfile if that access is blocked by a TLS-inspecting proxy)."
         )
     yield
     await get_store().close()

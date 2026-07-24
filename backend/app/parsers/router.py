@@ -97,6 +97,15 @@ def _get_parser(category: FileCategory) -> BaseParser | None:
     return _PARSERS[category]
 
 
+def warm_parser(category: FileCategory) -> BaseParser | None:
+    """Eagerly constructs and caches the parser for `category`, so a
+    heavyweight first-use cost (e.g. Docling loading its layout model) is
+    paid once at startup with a clear log line, not silently on whichever
+    request happens to be first. Returns the same cached instance
+    `parse_file` will use, or None for a category with no parser."""
+    return _get_parser(category)
+
+
 async def parse_file(file_path: str) -> ParsedDocument:
     category = classify(file_path)
     parser = _get_parser(category)

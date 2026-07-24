@@ -44,6 +44,17 @@ class PDFParser(BaseParser):
         self._converter = DocumentConverter(
             format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)}
         )
+        # DocumentConverter's constructor is a bare config shell — it does
+        # NOT load model weights (see docling's own source: the pipeline,
+        # and the HF Hub download inside it, is built lazily on first use).
+        # Force that now, at parser construction time, rather than letting
+        # it happen silently inside the first convert() call: a missing
+        # local model cache then fails loudly right here (surfaced by the
+        # startup preflight in main.py) instead of resurfacing as a
+        # confusing live-network error on whichever upload happens to be
+        # first, and every convert() call after this one skips the
+        # one-time model-load cost instead of only the second PDF onward.
+        self._converter.initialize_pipeline(InputFormat.PDF)
 
     async def parse(self, file_path: str) -> ParsedDocument:
         return await asyncio.to_thread(self._parse_sync, file_path)
