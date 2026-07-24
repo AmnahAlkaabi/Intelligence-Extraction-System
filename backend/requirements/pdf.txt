@@ -20,3 +20,11 @@ docling-core[chunking]==2.13.1
 docling-ibm-models==3.1.0
 rapidocr-onnxruntime==1.4.4
 onnxruntime==1.20.1
+
+# Already an indirect dependency of docling (used internally for PDF
+# backend rendering) -- pinned explicitly here too because pdf_parser.py
+# now imports it directly for the page-image OCR fallback (a PDF that's
+# really just a scan/image with no text layer for Docling to find),
+# rather than relying on it staying available only as a side effect of
+# docling's own dependency graph.
+pypdfium2>=4.30.0,<5.0.0

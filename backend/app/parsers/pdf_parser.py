@@ -17,10 +17,26 @@ PaddlePaddle framework dependency, and its default models ship bundled
 inside the `rapidocr-onnxruntime` pip wheel itself. That means zero
 runtime network calls even on a cold start on the air-gapped host: no
 separate model-download step is needed the way Tesseract/EasyOCR require.
+
+Docling's own per-page OCR trigger is a heuristic (it OCRs a page when
+that page's native text coverage is below a threshold), which normally
+covers scanned documents fine. But a PDF that's really just a photo or a
+scan wrapped in a PDF container by a scanner driver -- one giant image
+XObject, no meaningful text layer, sometimes an odd page-box/rotation --
+can slip past that heuristic or trip up table/layout parsing entirely,
+leaving the file with nothing extracted (score-tanking per
+data_quality.py, and functionally useless to every downstream agent). If
+Docling comes back with no text AND no tables, whether it raised or just
+found nothing, this parser reroutes the whole file through the same
+Tesseract OCR path the standalone Image specialist uses: render every
+page to a bitmap (pypdfium2, already a docling dependency, so no new
+package) and OCR it directly, rather than accepting an empty result for
+a file that's clearly readable to a human.
 """
 import asyncio
 import logging
 
+import pypdfium2 as pdfium
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import PdfPipelineOptions, RapidOcrOptions
 from docling.document_converter import DocumentConverter, PdfFormatOption
@@ -28,8 +44,14 @@ from docling.document_converter import DocumentConverter, PdfFormatOption
 from app.config import get_settings
 from app.models.schemas import FileCategory, ParsedDocument, TableBlock, TextBlock
 from app.parsers.base import BaseParser
+from app.parsers.ocr_utils import ocr_image
 
 logger = logging.getLogger(__name__)
+
+# ~144 DPI (scale is a multiple of the PDF's 72-DPI canvas unit) -- sharp
+# enough for Tesseract on typical scanned-document text without ballooning
+# render time/memory on a large page count.
+_OCR_FALLBACK_SCALE = 2.0
 
 
 class PDFParser(BaseParser):
@@ -99,4 +121,37 @@ class PDFParser(BaseParser):
         except Exception as exc:  # noqa: BLE001 - surface as a warning, never crash the pipeline
             logger.exception("Docling failed on %s", file_path)
             doc.warnings.append(f"Docling parse error: {exc}")
+
+        if not doc.full_text().strip() and not doc.tables:
+            self._ocr_fallback(file_path, doc)
         return doc
+
+    def _ocr_fallback(self, file_path: str, doc: ParsedDocument) -> None:
+        settings = get_settings()
+        pdf = None
+        try:
+            pdf = pdfium.PdfDocument(file_path)
+            for page_no, page in enumerate(pdf, start=1):
+                bitmap = page.render(scale=_OCR_FALLBACK_SCALE)
+                try:
+                    image = bitmap.to_pil().convert("RGB")
+                    doc.text_blocks.extend(ocr_image(image, settings.ocr_lang, page=page_no))
+                finally:
+                    bitmap.close()
+                    page.close()
+            if doc.text_blocks:
+                doc.warnings.append(
+                    "Docling found no text layer or tables in this PDF (likely a scan or "
+                    "an image saved as PDF) — rerouted to page-image OCR."
+                )
+            else:
+                doc.warnings.append(
+                    "Docling found no text layer or tables, and the page-image OCR "
+                    "fallback also found no readable text."
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("PDF page-image OCR fallback failed for %s", file_path)
+            doc.warnings.append(f"PDF page-image OCR fallback error: {exc}")
+        finally:
+            if pdf is not None:
+                pdf.close()
