@@ -13,13 +13,20 @@ export interface FileProgress {
   warnings: string[];
 }
 
+export interface BusinessIndex {
+  name: string;
+  value: string;
+  basis: string;
+  sources: string[];
+}
+
 export interface BIReport {
   executive_summary: string;
   key_entities: string[];
   financial_highlights: string[];
   risks: string[];
   market_signals: string[];
-  business_use_cases: string[];
+  business_use_cases: BusinessIndex[];
 }
 
 export interface PIIFinding {

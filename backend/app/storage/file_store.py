@@ -59,7 +59,11 @@ def write_markdown_report(job_id: str, output: SynthesisOutput) -> str:
     lines += ["## Financial Highlights", *[f"- {x}" for x in bi.financial_highlights], ""]
     lines += ["## Risks & Red Flags", *[f"- {x}" for x in bi.risks], ""]
     lines += ["## Market Signals", *[f"- {x}" for x in bi.market_signals], ""]
-    lines += ["## Business Use Cases", *[f"- {x}" for x in bi.business_use_cases], ""]
+    lines += ["## Business Use Cases", "Cross-file/cross-data indices computed from the extraction results.", ""]
+    for idx in bi.business_use_cases:
+        sources_str = f" ({', '.join(idx.sources)})" if idx.sources else ""
+        lines.append(f"- **{idx.name}: {idx.value}** — {idx.basis}{sources_str}")
+    lines.append("")
 
     lines += ["## PII / Masking Report", f"Severity counts: {comp.severity_counts}", ""]
     lines += ["### PII Inventory"]

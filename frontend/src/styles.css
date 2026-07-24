@@ -142,6 +142,17 @@ a { color: var(--accent); text-decoration: none; }
 .report-card h3 { margin: 0 0 10px; font-size: 12px; letter-spacing: 1px; text-transform: uppercase; color: var(--accent); }
 .report-card ul { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.7; color: var(--text); }
 .report-card p { font-size: 13px; line-height: 1.7; color: var(--text); margin: 0; }
+
+.index-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.index-card { background: var(--bg2); border: 1px solid var(--line); border-radius: 6px; padding: 16px 18px; }
+.index-name { font-size: 11px; letter-spacing: 0.5px; color: var(--muted); text-transform: uppercase; margin-bottom: 6px; }
+.index-value { font-family: monospace; font-size: 22px; font-weight: 700; color: var(--accent); margin-bottom: 8px; }
+.index-basis { font-size: 12px; line-height: 1.6; color: var(--text); margin: 0 0 10px; }
+.index-sources { display: flex; flex-wrap: wrap; gap: 5px; }
+.index-source-chip {
+  font-family: monospace; font-size: 10.5px; padding: 2px 7px; border-radius: 3px;
+  background: var(--bg3); color: var(--muted); border: 1px solid var(--line);
+}
 .muted { color: var(--muted); font-size: 13px; }
 .muted.small { font-size: 11px; }
 

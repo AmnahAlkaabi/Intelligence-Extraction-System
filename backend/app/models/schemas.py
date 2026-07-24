@@ -143,13 +143,25 @@ class DomainResult(BaseModel):
 
 # -------------------------------------------------------------- synthesis --
 
+class BusinessIndex(BaseModel):
+    """A metric computed deterministically by linking extraction results
+    across two or more files/data types — not an LLM-guessed number.
+    e.g. what share of contract value sits with one counterparty, computed
+    by joining financial_facts to entities across every uploaded file.
+    """
+    name: str
+    value: str                  # formatted result: "42%", "3 of 6 files", "0.78"
+    basis: str                  # what was linked/combined to compute it
+    sources: list[str] = []     # contributing file names
+
+
 class BIReport(BaseModel):
     executive_summary: str
     key_entities: list[str] = []
     financial_highlights: list[str] = []
     risks: list[str] = []
     market_signals: list[str] = []
-    business_use_cases: list[str] = []  # concrete actions/applications the findings support
+    business_use_cases: list[BusinessIndex] = []  # cross-file/cross-data indices
 
 
 class ComplianceReport(BaseModel):
