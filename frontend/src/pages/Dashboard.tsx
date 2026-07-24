@@ -8,6 +8,7 @@ import { CollapsibleSection } from "../components/CollapsibleSection";
 import { StatusBadge } from "../components/StatusBadge";
 import { JobTitle } from "../components/JobTitle";
 import { BIReportView } from "../components/BIReportView";
+import { CompletionHero } from "../components/CompletionHero";
 import { PIIReportView } from "../components/PIIReportView";
 import { KnowledgeGraphView } from "../components/KnowledgeGraphView";
 import { DataDumpView } from "../components/DataDumpView";
@@ -128,6 +129,8 @@ export default function DashboardPage() {
           knowledge graph has been built (before final synthesis finishes).
         </p>
       )}
+
+      {job.status === "complete" && <CompletionHero job={job} />}
 
       {showOutputs && (
         <section className="outputs-panel">

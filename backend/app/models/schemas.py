@@ -302,6 +302,16 @@ class FileProgress(BaseModel):
     warnings: list[str] = []   # e.g. "NER/PII/Financial/Relation skipped: Qwen unreachable"
     detected_language: str | None = None
     translated: bool = False
+    # Populated once this file finishes processing, from its DomainResult --
+    # drives the "Extracted: N entities..." / "No info found" line in the
+    # live file list so the user sees what each file actually yielded
+    # without waiting for the final report.
+    entities_found: int = 0
+    relations_found: int = 0
+    pii_found: int = 0
+    financial_facts_found: int = 0
+    tables_found: int = 0
+    chunks_found: int = 0
 
 
 class AgentActivity(BaseModel):

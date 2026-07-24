@@ -142,6 +142,12 @@ class JobManager:
                     progress.warnings = result.errors
                     progress.detected_language = result.detected_language
                     progress.translated = result.translated
+                    progress.entities_found = len(result.entities)
+                    progress.relations_found = len(result.relations)
+                    progress.pii_found = len(result.pii_findings)
+                    progress.financial_facts_found = len(result.financial_facts)
+                    progress.tables_found = len(result.tables)
+                    progress.chunks_found = len(result.chunks)
                 except Exception as exc:  # noqa: BLE001
                     logger.exception("Processing failed for %s", fp)
                     progress.status = JobStatus.FAILED

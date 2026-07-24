@@ -13,6 +13,12 @@ export interface FileProgress {
   warnings: string[];
   detected_language?: string | null;
   translated: boolean;
+  entities_found: number;
+  relations_found: number;
+  pii_found: number;
+  financial_facts_found: number;
+  tables_found: number;
+  chunks_found: number;
 }
 
 export interface BusinessIndex {
