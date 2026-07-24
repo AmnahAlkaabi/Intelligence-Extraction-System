@@ -142,6 +142,9 @@ def build_source_target_mapping(results: list[DomainResult]) -> SourceTargetMapp
                         target_column=target,
                         match_basis=f"column name -> '{target}'; {len(shared)} shared value(s), {overlap:.0%} overlap",
                         confidence=round(min(overlap * 2, 1.0), 2),
+                        matched_count=len(shared),
+                        left_only_count=len(values_a - shared),
+                        right_only_count=len(values_b - shared),
                     ))
 
     return SourceTargetMapping(columns=columns, joins=joins)

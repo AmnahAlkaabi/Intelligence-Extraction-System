@@ -50,6 +50,12 @@ export function SourceTargetMappingView({ mapping, jobId }: { mapping: SourceTar
             <li key={i}>
               <code>{j.left}</code> = <code>{j.right}</code> on <strong>{j.target_column}</strong>
               {" — "}{j.match_basis} (confidence {j.confidence})
+              <br />
+              <span className="muted small">
+                {j.matched_count} matched
+                {j.left_only_count > 0 && `, ${j.left_only_count} unmatched on the left`}
+                {j.right_only_count > 0 && `, ${j.right_only_count} unmatched on the right`}
+              </span>
             </li>
           ))}
         </ul>

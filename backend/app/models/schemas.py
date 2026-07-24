@@ -222,12 +222,20 @@ class JoinRule(BaseModel):
     """A suggested join between two source tables that share a standardized
     target column, backed by actual overlapping sample values (not just a
     name match) -- the "logic if there is any join required" piece.
+
+    matched/left_only/right_only counts come from actually executing the
+    join over every row (not just the sample window used for detection) --
+    this is what the Insight Agent (L3, Phase 4) turns into referential-
+    integrity findings rather than just proposing that a join exists.
     """
     left: str                  # "<file>::<table>.<column>"
     right: str                 # "<file>::<table>.<column>"
     target_column: str
     match_basis: str
     confidence: float
+    matched_count: int = 0
+    left_only_count: int = 0   # values on the left with no match on the right
+    right_only_count: int = 0  # values on the right with no match on the left
 
 
 class SourceTargetMapping(BaseModel):

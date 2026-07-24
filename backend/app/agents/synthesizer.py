@@ -7,6 +7,7 @@ context requirement in the pipeline.
 import json
 import logging
 
+from app.agents.insight_agent import compute_cross_data_insights
 from app.agents.mapping_agent import build_source_target_mapping
 from app.llm.client import get_llm_client
 from app.models.schemas import (
@@ -256,13 +257,19 @@ async def synthesize(results: list[DomainResult], skip_llm: bool = False) -> Syn
         if skip_llm else
         "Synthesis could not be generated (LLM unavailable). See per-file summaries below."
     )
+    source_target_mapping = build_source_target_mapping(results)
+    business_use_cases = (
+        compute_business_indices(results, all_entities, all_relations)
+        + compute_cross_data_insights(source_target_mapping)
+    )
+
     bi_report = BIReport(
         executive_summary=raw.get("executive_summary") or fallback_summary,
         key_entities=raw.get("key_entities") or [e.name for e in all_entities[:15]],
         financial_highlights=raw.get("financial_highlights") or [],
         risks=raw.get("risks") or [],
         market_signals=raw.get("market_signals") or [],
-        business_use_cases=compute_business_indices(results, all_entities, all_relations),
+        business_use_cases=business_use_cases,
         data_quality=[r.quality for r in results if r.quality is not None],
     )
 
@@ -284,8 +291,6 @@ async def synthesize(results: list[DomainResult], skip_llm: bool = False) -> Syn
         files_processed=all_tables_files,
         chunk_count=chunk_count,
     )
-
-    source_target_mapping = build_source_target_mapping(results)
 
     return SynthesisOutput(
         bi_report=bi_report,

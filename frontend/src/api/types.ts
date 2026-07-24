@@ -103,6 +103,9 @@ export interface JoinRule {
   target_column: string;
   match_basis: string;
   confidence: number;
+  matched_count: number;
+  left_only_count: number;
+  right_only_count: number;
 }
 
 export interface SourceTargetMapping {
