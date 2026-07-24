@@ -7,6 +7,7 @@ context requirement in the pipeline.
 import json
 import logging
 
+from app.agents.mapping_agent import build_source_target_mapping
 from app.llm.client import get_llm_client
 from app.models.schemas import (
     BIReport,
@@ -284,9 +285,12 @@ async def synthesize(results: list[DomainResult], skip_llm: bool = False) -> Syn
         chunk_count=chunk_count,
     )
 
+    source_target_mapping = build_source_target_mapping(results)
+
     return SynthesisOutput(
         bi_report=bi_report,
         compliance_report=compliance_report,
         knowledge_graph=knowledge_graph,
         data_dump=data_dump,
+        source_target_mapping=source_target_mapping,
     )

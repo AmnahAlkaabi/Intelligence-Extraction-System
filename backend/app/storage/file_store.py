@@ -87,6 +87,17 @@ def write_markdown_report(job_id: str, output: SynthesisOutput) -> str:
     lines += ["", "## Data Dump", f"Files processed: {len(output.data_dump.files_processed)}",
               f"Total chunks indexed: {output.data_dump.chunk_count}"]
 
+    stm = output.source_target_mapping
+    lines += ["", "## Source to Target Mapping", "Data dictionary: source column -> standardized target column.", ""]
+    lines += ["| Source File | Source Table | Source Column | Target Column | Type |",
+              "|---|---|---|---|---|"]
+    for c in stm.columns:
+        lines.append(f"| {c.source_file} | {c.source_table} | {c.source_column} | {c.target_column} | {c.data_type_guess} |")
+    if stm.joins:
+        lines += ["", "### Suggested Joins"]
+        for j in stm.joins:
+            lines.append(f"- `{j.left}` = `{j.right}` on **{j.target_column}** ({j.match_basis}, confidence {j.confidence})")
+
     content = "\n".join(lines)
     path = d / "report.md"
     path.write_text(content, encoding="utf-8")
@@ -101,6 +112,19 @@ def write_pii_csv(job_id: str, output: SynthesisOutput) -> str:
     writer.writerow(["severity", "category", "value_redacted", "source_file", "location"])
     for f in output.compliance_report.pii_inventory:
         writer.writerow([f.severity, f.category, f.value_redacted, f.source_file, f.location or ""])
+    path.write_text(buf.getvalue(), encoding="utf-8")
+    return str(path)
+
+
+def write_mapping_csv(job_id: str, output: SynthesisOutput) -> str:
+    d = job_output_dir(job_id)
+    path = d / "source_target_mapping.csv"
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["source_file", "source_table", "source_column", "target_column", "data_type_guess", "sample_values"])
+    for c in output.source_target_mapping.columns:
+        writer.writerow([c.source_file, c.source_table, c.source_column, c.target_column,
+                          c.data_type_guess, "; ".join(c.sample_values)])
     path.write_text(buf.getvalue(), encoding="utf-8")
     return str(path)
 

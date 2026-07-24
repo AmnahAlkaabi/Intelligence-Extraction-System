@@ -9,15 +9,17 @@ import { PIIReportView } from "../components/PIIReportView";
 import { KnowledgeGraphView } from "../components/KnowledgeGraphView";
 import { DataDumpView } from "../components/DataDumpView";
 import { BusinessUseCasesView } from "../components/BusinessUseCasesView";
+import { SourceTargetMappingView } from "../components/SourceTargetMappingView";
 import { ChatPanel } from "../components/ChatPanel";
 
-type Tab = "overview" | "pii" | "graph" | "usecases" | "data" | "chat";
+type Tab = "overview" | "pii" | "graph" | "usecases" | "mapping" | "data" | "chat";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "overview", label: "📋 High Level Analysis" },
   { id: "pii", label: "🛡️ PII/Masking Report" },
   { id: "graph", label: "🕸️ Knowledge Graph" },
   { id: "usecases", label: "💡 Business Use Cases" },
+  { id: "mapping", label: "🔀 Source→Target Mapping" },
   { id: "data", label: "📦 Data Dump" },
   { id: "chat", label: "💬 Chat Q&A" },
 ];
@@ -82,6 +84,7 @@ export default function DashboardPage() {
             {tab === "pii" && <PIIReportView report={job.result.compliance_report} jobId={job.job_id} />}
             {tab === "graph" && <KnowledgeGraphView graph={job.result.knowledge_graph} />}
             {tab === "usecases" && <BusinessUseCasesView report={job.result.bi_report} />}
+            {tab === "mapping" && <SourceTargetMappingView mapping={job.result.source_target_mapping} jobId={job.job_id} />}
             {tab === "data" && <DataDumpView job={job} />}
             {tab === "chat" && <ChatPanel jobId={job.job_id} />}
           </div>

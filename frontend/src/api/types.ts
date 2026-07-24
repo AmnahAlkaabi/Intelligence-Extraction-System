@@ -88,10 +88,33 @@ export interface TableBlock {
   caption?: string | null;
 }
 
+export interface ColumnMapping {
+  source_file: string;
+  source_table: string;
+  source_column: string;
+  target_column: string;
+  data_type_guess: string;
+  sample_values: string[];
+}
+
+export interface JoinRule {
+  left: string;
+  right: string;
+  target_column: string;
+  match_basis: string;
+  confidence: number;
+}
+
+export interface SourceTargetMapping {
+  columns: ColumnMapping[];
+  joins: JoinRule[];
+}
+
 export interface SynthesisOutput {
   bi_report: BIReport;
   compliance_report: ComplianceReport;
   knowledge_graph: KnowledgeGraphExport;
+  source_target_mapping: SourceTargetMapping;
   data_dump: { tables: TableBlock[]; files_processed: string[]; chunk_count: number };
 }
 

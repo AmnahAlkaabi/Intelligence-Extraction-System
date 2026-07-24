@@ -8,6 +8,7 @@ from app.models.schemas import (
     ComplianceReport,
     JobStatus,
     KnowledgeGraphExport,
+    SourceTargetMapping,
     TableBlock,
 )
 from app.pipeline.job_manager import get_job_manager
@@ -40,6 +41,11 @@ async def get_knowledge_graph(job_id: str) -> KnowledgeGraphExport:
     return _completed_job(job_id).result.knowledge_graph
 
 
+@router.get("/outputs/{job_id}/source-target-mapping", response_model=SourceTargetMapping)
+async def get_source_target_mapping(job_id: str) -> SourceTargetMapping:
+    return _completed_job(job_id).result.source_target_mapping
+
+
 @router.get("/outputs/{job_id}/data-dump/tables", response_model=list[TableBlock])
 async def get_data_dump_tables(job_id: str) -> list[TableBlock]:
     _completed_job(job_id)
@@ -55,6 +61,7 @@ async def download_artifact(job_id: str, artifact: str) -> FileResponse:
         "report.md": "text/markdown",
         "pii_inventory.csv": "text/csv",
         "knowledge_graph.json": "application/json",
+        "source_target_mapping.csv": "text/csv",
     }
     if artifact not in allowed:
         raise HTTPException(404, "Unknown artifact.")

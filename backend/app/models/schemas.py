@@ -203,11 +203,44 @@ class DataDump(BaseModel):
     chunk_count: int = 0
 
 
+class ColumnMapping(BaseModel):
+    """One row of the data dictionary: a single source column, mapped to a
+    standardized target column name. Computed structurally (column-name
+    normalization + a small business-term alias table + sample value
+    typing) -- not LLM-guessed, same rationale as Business Use Cases and
+    Data Quality.
+    """
+    source_file: str
+    source_table: str          # "<file>::<sheet/table/caption>"
+    source_column: str
+    target_column: str         # standardized name, e.g. "customer_id"
+    data_type_guess: str       # id | email | phone | date | number | text
+    sample_values: list[str] = []
+
+
+class JoinRule(BaseModel):
+    """A suggested join between two source tables that share a standardized
+    target column, backed by actual overlapping sample values (not just a
+    name match) -- the "logic if there is any join required" piece.
+    """
+    left: str                  # "<file>::<table>.<column>"
+    right: str                 # "<file>::<table>.<column>"
+    target_column: str
+    match_basis: str
+    confidence: float
+
+
+class SourceTargetMapping(BaseModel):
+    columns: list[ColumnMapping] = []
+    joins: list[JoinRule] = []
+
+
 class SynthesisOutput(BaseModel):
     bi_report: BIReport
     compliance_report: ComplianceReport
     knowledge_graph: KnowledgeGraphExport
     data_dump: DataDump
+    source_target_mapping: SourceTargetMapping
 
 
 # -------------------------------------------------------------------- job --

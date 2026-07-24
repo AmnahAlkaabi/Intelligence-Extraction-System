@@ -21,6 +21,7 @@ from app.pipeline.agent_tracker import finish_activity, start_activity
 from app.storage.file_store import (
     write_graph_json,
     write_json_report,
+    write_mapping_csv,
     write_markdown_report,
     write_pii_csv,
     write_tables_csv,
@@ -135,6 +136,7 @@ class JobManager:
             write_markdown_report(job_id, output)
             write_pii_csv(job_id, output)
             write_graph_json(job_id, output)
+            write_mapping_csv(job_id, output)
             all_tables = [t for r in results for t in r.tables]
             write_tables_csv(job_id, all_tables)
 

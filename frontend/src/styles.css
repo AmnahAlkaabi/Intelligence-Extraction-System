@@ -233,6 +233,11 @@ a { color: var(--accent); text-decoration: none; }
 .sev-medium { background: rgba(245,200,66,0.15); color: var(--warn); }
 .sev-low { background: rgba(140,164,189,0.15); color: var(--muted); }
 
+.dtype-chip {
+  padding: 2px 8px; border-radius: 8px; font-size: 10px; text-transform: uppercase;
+  background: var(--bg3); color: var(--muted); font-family: monospace;
+}
+
 .graph-legend { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 8px; }
 .legend-item { font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 5px; }
 .legend-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
