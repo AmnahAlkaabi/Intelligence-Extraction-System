@@ -149,6 +149,7 @@ class BIReport(BaseModel):
     financial_highlights: list[str] = []
     risks: list[str] = []
     market_signals: list[str] = []
+    business_use_cases: list[str] = []  # concrete actions/applications the findings support
 
 
 class ComplianceReport(BaseModel):
@@ -183,6 +184,7 @@ class FileProgress(BaseModel):
     category: FileCategory = FileCategory.UNKNOWN
     status: JobStatus = JobStatus.QUEUED
     error: str | None = None
+    warnings: list[str] = []   # e.g. "NER/PII/Financial/Relation skipped: Qwen unreachable"
 
 
 class Job(BaseModel):
@@ -194,6 +196,13 @@ class Job(BaseModel):
     progress_pct: float = 0.0
     result: SynthesisOutput | None = None
     error: str | None = None
+    # Non-fatal service connectivity issues detected at job start (e.g.
+    # "Cannot reach qwen model endpoint at http://... — affects: extraction").
+    # Processing still proceeds with degraded functionality rather than
+    # failing outright, but the user sees immediately why extraction/
+    # synthesis/chat might be limited instead of watching progress stall
+    # with no explanation.
+    warnings: list[str] = []
 
 
 # -------------------------------------------------------------------- chat --

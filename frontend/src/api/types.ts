@@ -10,6 +10,7 @@ export interface FileProgress {
   category: FileCategory;
   status: JobStatusValue;
   error?: string | null;
+  warnings: string[];
 }
 
 export interface BIReport {
@@ -18,6 +19,7 @@ export interface BIReport {
   financial_highlights: string[];
   risks: string[];
   market_signals: string[];
+  business_use_cases: string[];
 }
 
 export interface PIIFinding {
@@ -85,6 +87,7 @@ export interface Job {
   progress_pct: number;
   result: SynthesisOutput | null;
   error?: string | null;
+  warnings: string[];
 }
 
 export interface ChatMessage {

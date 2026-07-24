@@ -59,8 +59,9 @@ def write_markdown_report(job_id: str, output: SynthesisOutput) -> str:
     lines += ["## Financial Highlights", *[f"- {x}" for x in bi.financial_highlights], ""]
     lines += ["## Risks & Red Flags", *[f"- {x}" for x in bi.risks], ""]
     lines += ["## Market Signals", *[f"- {x}" for x in bi.market_signals], ""]
+    lines += ["## Business Use Cases", *[f"- {x}" for x in bi.business_use_cases], ""]
 
-    lines += ["## PII / Compliance", f"Severity counts: {comp.severity_counts}", ""]
+    lines += ["## PII / Masking Report", f"Severity counts: {comp.severity_counts}", ""]
     lines += ["### PII Inventory"]
     for f in comp.pii_inventory[:200]:
         lines.append(f"- [{f.severity.upper()}] {f.category}: {f.value_redacted} ({f.source_file})")

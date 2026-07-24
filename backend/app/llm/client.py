@@ -58,6 +58,31 @@ class LLMClient:
     def backend_for_role(self, role: str) -> str:
         return self._role_backend.get(role, "qwen")
 
+    def roles_using(self, backend: str) -> list[str]:
+        return [role for role, b in self._role_backend.items() if b == backend]
+
+    async def check_reachable(self, backend: str, timeout_s: float = 8.0) -> tuple[bool, str | None]:
+        """Fast connectivity probe (GET /v1/models) — cheap, no generation.
+
+        Used as a preflight so a dead endpoint is reported in seconds instead
+        of discovered only after several minutes of doomed retries deep
+        inside file processing.
+        """
+        client = self._clients[backend]
+        base_url = self._settings.qwen_base_url if backend == "qwen" else self._settings.kimi_base_url
+        try:
+            await asyncio.wait_for(client.models.list(), timeout=timeout_s)
+            return True, None
+        except Exception as exc:  # noqa: BLE001 - any failure means "unreachable" for our purposes
+            detail = f"Cannot reach {backend} model endpoint at {base_url} ({exc.__class__.__name__}: {exc})"
+            logger.warning(detail)
+            return False, detail
+
+    async def check_all_backends(self, timeout_s: float = 8.0) -> dict[str, tuple[bool, str | None]]:
+        backends = ("qwen", "kimi")
+        results = await asyncio.gather(*(self.check_reachable(b, timeout_s) for b in backends))
+        return dict(zip(backends, results))
+
     async def complete(
         self,
         role: str,

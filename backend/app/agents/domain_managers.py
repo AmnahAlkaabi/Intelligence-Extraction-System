@@ -14,6 +14,7 @@ import logging
 
 from app.agents.chunking import chunk_and_embed
 from app.agents.extraction import run_financial, run_ner, run_pii, run_relations, run_summary
+from app.llm.client import get_llm_client
 from app.models.schemas import DomainResult, FileCategory
 from app.parsers.router import parse_file
 
@@ -27,7 +28,14 @@ _TEXT_CATEGORIES = {
 }
 
 
-async def process_file(file_path: str) -> DomainResult:
+async def process_file(file_path: str, unreachable_backends: set[str] | None = None) -> DomainResult:
+    """unreachable_backends: backends already confirmed down by the job's
+    preflight check (see job_manager._run). Extraction is skipped outright
+    rather than attempted-and-retried when its backend is already known
+    unreachable — this is what keeps a dead LLM endpoint from silently
+    stalling a file for several minutes with no visible cause.
+    """
+    unreachable_backends = unreachable_backends or set()
     doc = await parse_file(file_path)
     result = DomainResult(domain=doc.category.value, source_file=file_path, tables=doc.tables)
 
@@ -44,6 +52,13 @@ async def process_file(file_path: str) -> DomainResult:
     except Exception:
         logger.exception("Chunk+embed failed for %s", file_path)
         result.errors.append("Chunk+embed step failed")
+
+    extraction_backend = get_llm_client().backend_for_role("extraction")
+    if extraction_backend in unreachable_backends:
+        msg = (f"NER/PII/Financial/Relation extraction skipped: "
+               f"'{extraction_backend}' model endpoint is unreachable")
+        result.errors.append(msg)
+        return result
 
     try:
         result.entities = await run_ner(text, file_path)

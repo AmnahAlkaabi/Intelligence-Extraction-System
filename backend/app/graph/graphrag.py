@@ -72,14 +72,27 @@ async def answer_question(job_id: str, message: str, history: list[ChatMessage])
     user_prompt = f"{history_str}Context:\n{context}\n\nQuestion: {message}"
 
     client = get_llm_client()
+    chat_backend = client.backend_for_role("chat")
+
+    # Fast preflight before the real (multi-retry, up-to-180s-per-attempt)
+    # call -- a genuinely dead chat endpoint should fail in ~8s with a clear
+    # message, not leave the user waiting minutes per message with no
+    # feedback while it silently retries.
+    reachable, detail = await client.check_reachable(chat_backend, timeout_s=8.0)
+    if not reachable:
+        return ChatResponse(
+            answer=f"The chat model ('{chat_backend}') is currently unreachable: {detail} "
+                   f"Verify the endpoint is up and reachable from the backend, then try again.",
+            citations=[], uncertain=True,
+        )
+
     try:
         resp = await client.complete("chat", CHAT_SYSTEM, user_prompt, temperature=0.2, max_tokens=1024)
         answer_text = resp.text.strip()
-    except Exception:
+    except Exception as exc:
         logger.exception("Chat completion failed for job %s", job_id)
         return ChatResponse(
-            answer="The chat model is currently unreachable. Please verify the on-prem "
-                   "Kimi2 endpoint is up and try again.",
+            answer=f"The chat model ('{chat_backend}') failed to respond: {exc}",
             citations=[], uncertain=True,
         )
 

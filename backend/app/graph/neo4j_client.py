@@ -4,6 +4,7 @@ Neo4j doubles as both the knowledge graph store AND the vector index for
 RAG chunks (via its native vector index, Neo4j 5.11+), so no separate
 vector DB is required in the air-gapped stack.
 """
+import asyncio
 import logging
 
 from neo4j import AsyncDriver, AsyncGraphDatabase
@@ -24,6 +25,18 @@ class Neo4jStore:
 
     async def close(self) -> None:
         await self._driver.close()
+
+    async def check_reachable(self, timeout_s: float = 8.0) -> tuple[bool, str | None]:
+        try:
+            async def _ping() -> None:
+                async with self._driver.session(database=self._settings.neo4j_database) as session:
+                    await session.run("RETURN 1")
+            await asyncio.wait_for(_ping(), timeout=timeout_s)
+            return True, None
+        except Exception as exc:  # noqa: BLE001
+            detail = f"Cannot reach Neo4j at {self._settings.neo4j_uri} ({exc.__class__.__name__}: {exc})"
+            logger.warning(detail)
+            return False, detail
 
     async def ensure_schema(self) -> None:
         settings = self._settings

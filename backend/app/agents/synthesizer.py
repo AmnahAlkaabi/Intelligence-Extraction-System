@@ -33,6 +33,7 @@ Return ONLY a JSON object of this exact shape, nothing else:
   "financial_highlights": ["short bullet strings", "..."],
   "risks": ["short bullet strings describing anomalies/red flags", "..."],
   "market_signals": ["short bullet strings, business-relevant observations", "..."],
+  "business_use_cases": ["short bullet strings: concrete actions a business user could take on these findings, e.g. 'Renegotiate Vendor X payment terms back to standard 30-day' or 'Flag duplicate invoice pair for recovery'", "..."],
   "gap_flags": ["short bullet strings: compliance gaps e.g. missing consent basis for PII found", "..."],
   "remediation": ["short bullet strings: concrete remediation actions", "..."]
 }
@@ -88,7 +89,11 @@ def _build_context_digest(results: list[DomainResult]) -> str:
     return "\n".join(lines)
 
 
-async def synthesize(results: list[DomainResult]) -> SynthesisOutput:
+async def synthesize(results: list[DomainResult], skip_llm: bool = False) -> SynthesisOutput:
+    """skip_llm: set when the job's preflight check already found the
+    synthesis backend unreachable -- skips straight to the fallback report
+    instead of burning through several minutes of doomed retries first.
+    """
     client = get_llm_client()
 
     all_entities = _dedup_entities([e for r in results for e in r.entities])
@@ -98,19 +103,29 @@ async def synthesize(results: list[DomainResult]) -> SynthesisOutput:
     chunk_count = sum(len(r.chunks) for r in results)
 
     digest = _build_context_digest(results)
-    try:
-        raw = await client.complete_json("synthesis", SYNTHESIS_SYSTEM, digest, max_tokens=2048)
-    except Exception:
-        logger.exception("Synthesis LLM call failed")
+    if skip_llm:
         raw = {}
+    else:
+        try:
+            raw = await client.complete_json("synthesis", SYNTHESIS_SYSTEM, digest, max_tokens=2048)
+        except Exception:
+            logger.exception("Synthesis LLM call failed")
+            raw = {}
 
+    fallback_summary = (
+        f"Synthesis model unreachable — showing per-file findings only. "
+        f"{len(all_entities)} entities and {len(all_pii)} PII findings were still extracted "
+        f"where the extraction model was reachable."
+        if skip_llm else
+        "Synthesis could not be generated (LLM unavailable). See per-file summaries below."
+    )
     bi_report = BIReport(
-        executive_summary=raw.get("executive_summary")
-        or "Synthesis could not be generated (LLM unavailable). See per-file summaries below.",
+        executive_summary=raw.get("executive_summary") or fallback_summary,
         key_entities=raw.get("key_entities") or [e.name for e in all_entities[:15]],
         financial_highlights=raw.get("financial_highlights") or [],
         risks=raw.get("risks") or [],
         market_signals=raw.get("market_signals") or [],
+        business_use_cases=raw.get("business_use_cases") or [],
     )
 
     severity_counts: dict[str, int] = {}

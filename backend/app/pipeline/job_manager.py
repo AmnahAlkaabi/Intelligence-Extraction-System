@@ -14,6 +14,7 @@ from app.agents.domain_managers import process_file
 from app.agents.synthesizer import synthesize
 from app.config import get_settings
 from app.graph.neo4j_client import get_store
+from app.llm.client import get_llm_client
 from app.models.schemas import DomainResult, FileProgress, Job, JobStatus
 from app.parsers.router import classify
 from app.storage.file_store import (
@@ -58,6 +59,29 @@ class JobManager:
         settings = get_settings()
         semaphore = asyncio.Semaphore(settings.max_parallel_files)
 
+        # Preflight: check Qwen/Kimi2/Neo4j reachability up front (a few
+        # seconds) instead of only discovering a dead service after several
+        # minutes of doomed per-file retries with the progress bar stuck and
+        # no indication why. Non-fatal -- the job still runs with whatever
+        # degraded functionality is possible, but the user sees exactly
+        # what's down and which features it affects, immediately.
+        llm_client = get_llm_client()
+        store = get_store()
+        backend_checks, (neo4j_ok, neo4j_detail) = await asyncio.gather(
+            llm_client.check_all_backends(),
+            store.check_reachable(),
+        )
+        unreachable_backends = {b for b, (ok, _) in backend_checks.items() if not ok}
+        warnings: list[str] = []
+        for backend in unreachable_backends:
+            _, detail = backend_checks[backend]
+            roles = llm_client.roles_using(backend)
+            warnings.append(f"{detail} — affects: {', '.join(roles) if roles else 'no active roles'}")
+        if not neo4j_ok:
+            warnings.append(f"{neo4j_detail} — affects: knowledge graph, chat")
+        job.warnings = warnings
+        neo4j_reachable = neo4j_ok
+
         job.status = JobStatus.PARSING
         self._touch(job)
 
@@ -67,8 +91,9 @@ class JobManager:
                 progress.status = JobStatus.EXTRACTING
                 self._touch(job)
                 try:
-                    result = await process_file(fp)
+                    result = await process_file(fp, unreachable_backends=unreachable_backends)
                     progress.status = JobStatus.COMPLETE
+                    progress.warnings = result.errors
                 except Exception as exc:  # noqa: BLE001
                     logger.exception("Processing failed for %s", fp)
                     progress.status = JobStatus.FAILED
@@ -82,20 +107,23 @@ class JobManager:
 
         job.status = JobStatus.GRAPH_BUILD
         self._touch(job)
-        try:
-            store = get_store()
-            await store.ensure_schema()
-            all_entities = [e for r in results for e in r.entities]
-            all_relations = [rel for r in results for rel in r.relations]
-            all_chunks = [c for r in results for c in r.chunks]
-            await store.ingest_job_graph(job_id, all_entities, all_relations, all_chunks)
-        except Exception:
-            logger.exception("Graph ingest failed for job %s — chat/GraphRAG will be degraded.", job_id)
+        if neo4j_reachable:
+            try:
+                await store.ensure_schema()
+                all_entities = [e for r in results for e in r.entities]
+                all_relations = [rel for r in results for rel in r.relations]
+                all_chunks = [c for r in results for c in r.chunks]
+                await store.ingest_job_graph(job_id, all_entities, all_relations, all_chunks)
+            except Exception:
+                logger.exception("Graph ingest failed for job %s — chat/GraphRAG will be degraded.", job_id)
+        else:
+            logger.info("Skipping graph ingest for job %s — Neo4j was unreachable at preflight.", job_id)
 
         job.status = JobStatus.SYNTHESIZING
         self._touch(job)
         try:
-            output = await synthesize(results)
+            synthesis_backend = llm_client.backend_for_role("synthesis")
+            output = await synthesize(results, skip_llm=synthesis_backend in unreachable_backends)
             job.result = output
 
             write_json_report(job_id, output)

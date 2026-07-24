@@ -7,16 +7,18 @@ import { BIReportView } from "../components/BIReportView";
 import { PIIReportView } from "../components/PIIReportView";
 import { KnowledgeGraphView } from "../components/KnowledgeGraphView";
 import { DataDumpView } from "../components/DataDumpView";
+import { BusinessUseCasesView } from "../components/BusinessUseCasesView";
 import { ChatPanel } from "../components/ChatPanel";
 
-type Tab = "overview" | "pii" | "graph" | "data" | "chat";
+type Tab = "overview" | "pii" | "graph" | "usecases" | "data" | "chat";
 
 const TABS: { id: Tab; label: string }[] = [
-  { id: "overview", label: "📋 BI Report" },
-  { id: "pii", label: "🛡️ PII & Compliance" },
+  { id: "overview", label: "📋 High Level Analysis" },
+  { id: "pii", label: "🛡️ PII/Masking Report" },
   { id: "graph", label: "🕸️ Knowledge Graph" },
+  { id: "usecases", label: "💡 Business Use Cases" },
   { id: "data", label: "📦 Data Dump" },
-  { id: "chat", label: "💬 Chat" },
+  { id: "chat", label: "💬 Chat Q&A" },
 ];
 
 const ACTIVE_STATUSES = new Set(["queued", "parsing", "extracting", "graph_build", "synthesizing"]);
@@ -77,6 +79,7 @@ export default function DashboardPage() {
             {tab === "overview" && <BIReportView report={job.result.bi_report} />}
             {tab === "pii" && <PIIReportView report={job.result.compliance_report} jobId={job.job_id} />}
             {tab === "graph" && <KnowledgeGraphView graph={job.result.knowledge_graph} />}
+            {tab === "usecases" && <BusinessUseCasesView report={job.result.bi_report} />}
             {tab === "data" && <DataDumpView job={job} />}
             {tab === "chat" && <ChatPanel jobId={job.job_id} />}
           </div>
