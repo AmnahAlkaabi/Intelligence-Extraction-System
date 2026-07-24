@@ -86,14 +86,38 @@ class ParsedDocument(BaseModel):
         return "\n".join(b.text for b in self.text_blocks if b.text.strip())
 
 
+class ColumnQuality(BaseModel):
+    """Cell-level quality stats for one column of one table, computed by
+    scanning every row -- not sampled, not LLM-guessed."""
+    column: str
+    null_rate: float            # share of rows blank or a null-token ("", "N/A", "null", "-", ...)
+    garbage_rate: float         # share of rows that are non-null but junk (Excel errors, "####", repeated chars)
+    distinct_ratio: float       # distinct non-null values / non-null count -- near 0 means constant column
+    type_consistency: float     # share of non-null, non-garbage values matching inferred_type
+    inferred_type: str          # id | number | date | email | phone | text
+    issues: list[str] = []
+
+
+class TableQuality(BaseModel):
+    """Row/column-level quality stats for one table within a file."""
+    table: str                  # sheet/caption/table_id label
+    row_count: int
+    duplicate_rows: int
+    duplicate_rate: float
+    columns: list[ColumnQuality] = []
+
+
 class DataQuality(BaseModel):
     """Deterministic per-file quality assessment (L3 Data Quality agent) --
-    computed from parser warnings, OCR confidence, and extraction yield,
-    not LLM-guessed."""
+    computed from parser warnings, OCR confidence, extraction yield, and
+    (for tabular files) real cell-level scans for NULLs, garbage/placeholder
+    values, duplicate rows, constant columns, and type consistency. Not
+    LLM-guessed."""
     source_file: str
     score: float               # 0-100 composite
     completeness: str          # short human-readable status
     issues: list[str] = []
+    tables: list[TableQuality] = []
 
 
 # ------------------------------------------------------------- extraction --

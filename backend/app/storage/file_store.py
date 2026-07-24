@@ -93,11 +93,22 @@ def write_markdown_report(job_id: str, output: SynthesisOutput) -> str:
                       f"{fs.pii_findings} | {fs.financial_facts} | {fs.tables} | {fs.chunks} |")
     lines.append("")
 
-    lines += ["### Quality Check Stats", "Deterministic per-file quality assessment (Validator agent).", ""]
+    lines += ["### Quality Check Stats",
+              "Deterministic per-file quality assessment (Validator agent) -- for tabular files, every row of "
+              "every table is scanned column-by-column for NULLs, garbage/placeholder values, duplicate rows, "
+              "constant columns, and type consistency.", ""]
     for q in bi.data_quality:
         lines.append(f"- **{q.source_file}: {q.score}/100 ({q.completeness})**")
         for issue in q.issues:
             lines.append(f"  - {issue}")
+        for t in q.tables:
+            lines.append(f"  - Table `{t.table}`: {t.row_count} rows, {t.duplicate_rows} duplicate ({t.duplicate_rate:.0%})")
+            for c in t.columns:
+                lines.append(
+                    f"    - `{c.column}` ({c.inferred_type}): "
+                    f"{c.null_rate:.0%} NULL, {c.garbage_rate:.0%} garbage, "
+                    f"{c.type_consistency:.0%} type-consistent"
+                )
     lines.append("")
 
     lines += ["## Key Entities", *[f"- {e}" for e in bi.key_entities], ""]

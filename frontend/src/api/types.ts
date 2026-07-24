@@ -22,11 +22,30 @@ export interface BusinessIndex {
   sources: string[];
 }
 
+export interface ColumnQuality {
+  column: string;
+  null_rate: number;
+  garbage_rate: number;
+  distinct_ratio: number;
+  type_consistency: number;
+  inferred_type: string;
+  issues: string[];
+}
+
+export interface TableQuality {
+  table: string;
+  row_count: number;
+  duplicate_rows: number;
+  duplicate_rate: number;
+  columns: ColumnQuality[];
+}
+
 export interface DataQuality {
   source_file: string;
   score: number;
   completeness: string;
   issues: string[];
+  tables: TableQuality[];
 }
 
 export interface FileStats {

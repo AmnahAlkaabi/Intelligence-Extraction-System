@@ -60,7 +60,7 @@ def standardize_column(column: str) -> str:
     return "_".join(deduped)
 
 
-def _guess_type(column: str, samples: list[str]) -> str:
+def guess_column_type(column: str, samples: list[str]) -> str:
     norm = column.lower()
     if _ID_RE.search(norm):
         return "id"
@@ -109,7 +109,7 @@ def _table_columns(source_file: str, label: str, table: TableBlock) -> list[BITa
             source_file=source_file,
             source_table=label,
             source_column=header,
-            data_type_guess=_guess_type(header, samples),
+            data_type_guess=guess_column_type(header, samples),
             sample_values=samples[:5],
         ))
     return cols

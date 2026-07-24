@@ -1,10 +1,42 @@
-import type { BIReport } from "../api/types";
+import type { BIReport, ColumnQuality } from "../api/types";
 
 function qualityClass(score: number): string {
   if (score >= 90) return "dq-good";
   if (score >= 70) return "dq-minor";
   if (score >= 40) return "dq-partial";
   return "dq-severe";
+}
+
+function cellClass(rate: number): string {
+  if (rate >= 0.3) return "dq-cell-bad";
+  if (rate >= 0.1) return "dq-cell-warn";
+  return "dq-cell-ok";
+}
+
+function ColumnStatsTable({ columns }: { columns: ColumnQuality[] }) {
+  return (
+    <div className="table-scroll">
+      <table className="data-table dq-column-table">
+        <thead>
+          <tr>
+            <th>Column</th><th>Type</th><th>NULL</th><th>Garbage</th><th>Distinct</th><th>Type-consistent</th>
+          </tr>
+        </thead>
+        <tbody>
+          {columns.map((c) => (
+            <tr key={c.column}>
+              <td className="mono small">{c.column}</td>
+              <td><span className="dtype-chip">{c.inferred_type}</span></td>
+              <td className={cellClass(c.null_rate)}>{(c.null_rate * 100).toFixed(0)}%</td>
+              <td className={cellClass(c.garbage_rate)}>{(c.garbage_rate * 100).toFixed(0)}%</td>
+              <td className="small muted">{(c.distinct_ratio * 100).toFixed(0)}%</td>
+              <td className={cellClass(1 - c.type_consistency)}>{(c.type_consistency * 100).toFixed(0)}%</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 export function BIReportView({ report }: { report: BIReport }) {
@@ -99,6 +131,20 @@ export function BIReportView({ report }: { report: BIReport }) {
                 <ul className="dq-issues">
                   {q.issues.map((issue, i) => <li key={i}>{issue}</li>)}
                 </ul>
+              )}
+              {q.tables.length > 0 && (
+                <details className="dq-table-detail">
+                  <summary>Column-level NULL / garbage / type breakdown ({q.tables.length} table{q.tables.length > 1 ? "s" : ""})</summary>
+                  {q.tables.map((t) => (
+                    <div key={t.table} className="dq-table-block">
+                      <div className="dq-table-head">
+                        <span className="mono small">{t.table}</span>
+                        <span className="muted small">{t.row_count} rows, {t.duplicate_rows} duplicate ({(t.duplicate_rate * 100).toFixed(0)}%)</span>
+                      </div>
+                      <ColumnStatsTable columns={t.columns} />
+                    </div>
+                  ))}
+                </details>
               )}
             </div>
           </div>

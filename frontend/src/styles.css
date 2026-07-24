@@ -390,6 +390,18 @@ a { color: var(--accent); text-decoration: none; }
 .dq-file { font-family: monospace; color: var(--text); word-break: break-all; }
 .dq-completeness { color: var(--muted); flex: 0 0 auto; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.5px; }
 .dq-issues { margin: 6px 0 0; padding-left: 18px; font-size: 12px; line-height: 1.6; color: var(--muted); }
+.dq-table-detail { margin-top: 8px; }
+.dq-table-detail summary {
+  cursor: pointer; font-size: 11.5px; color: var(--accent); user-select: none; list-style: none;
+}
+.dq-table-detail summary::-webkit-details-marker { display: none; }
+.dq-table-detail summary::before { content: "▸ "; }
+.dq-table-detail[open] summary::before { content: "▾ "; }
+.dq-table-block { margin-top: 10px; }
+.dq-table-head { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 6px; }
+.dq-column-table td.dq-cell-ok { color: var(--muted); }
+.dq-column-table td.dq-cell-warn { color: var(--warn); font-weight: 600; }
+.dq-column-table td.dq-cell-bad { color: var(--danger); font-weight: 600; }
 .index-name { font-size: 11px; letter-spacing: 0.5px; color: var(--muted); text-transform: uppercase; margin-bottom: 6px; }
 .index-value { font-family: monospace; font-size: 22px; font-weight: 700; color: var(--accent); margin-bottom: 8px; }
 .index-basis { font-size: 12px; line-height: 1.6; color: var(--text); margin: 0 0 10px; }
