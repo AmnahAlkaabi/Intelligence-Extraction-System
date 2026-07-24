@@ -12,11 +12,16 @@ from pathlib import Path
 
 from app.models.schemas import FileCategory, ParsedDocument
 from app.parsers.base import BaseParser
+from app.parsers.code_parser import CodeParser
 from app.parsers.csv_parser import CSVParser
+from app.parsers.database_parser import DatabaseParser
 from app.parsers.excel_parser import ExcelParser
 from app.parsers.image_parser import ImageParser
 from app.parsers.json_parser import JSONParser
+from app.parsers.media_parser import MediaParser
+from app.parsers.office_parser import OfficeParser
 from app.parsers.pdf_parser import PDFParser
+from app.parsers.web_parser import WebParser
 
 logger = logging.getLogger(__name__)
 
@@ -36,10 +41,14 @@ _EXT_MAP: dict[str, FileCategory] = {
     ".log": FileCategory.CODE, ".md": FileCategory.CODE, ".yaml": FileCategory.CODE,
     ".yml": FileCategory.CODE, ".toml": FileCategory.CODE, ".txt": FileCategory.CODE,
     ".zip": FileCategory.ARCHIVE, ".tar": FileCategory.ARCHIVE, ".gz": FileCategory.ARCHIVE,
+    ".tgz": FileCategory.ARCHIVE, ".bz2": FileCategory.ARCHIVE, ".tbz2": FileCategory.ARCHIVE,
+    ".xz": FileCategory.ARCHIVE, ".txz": FileCategory.ARCHIVE,
     ".7z": FileCategory.ARCHIVE, ".rar": FileCategory.ARCHIVE,
+    ".db": FileCategory.DATABASE, ".sqlite": FileCategory.DATABASE, ".sqlite3": FileCategory.DATABASE,
     ".mp3": FileCategory.MEDIA, ".wav": FileCategory.MEDIA, ".mp4": FileCategory.MEDIA,
+    ".m4a": FileCategory.MEDIA, ".mov": FileCategory.MEDIA, ".flac": FileCategory.MEDIA,
     ".html": FileCategory.WEB, ".htm": FileCategory.WEB, ".xml": FileCategory.WEB,
-    ".parquet": FileCategory.WEB,
+    ".geojson": FileCategory.WEB,
 }
 
 
@@ -73,6 +82,16 @@ def _get_parser(category: FileCategory) -> BaseParser | None:
             _PARSERS[category] = ExcelParser()
         elif category == FileCategory.JSON_:
             _PARSERS[category] = JSONParser()
+        elif category == FileCategory.OFFICE:
+            _PARSERS[category] = OfficeParser()
+        elif category == FileCategory.DATABASE:
+            _PARSERS[category] = DatabaseParser()
+        elif category == FileCategory.CODE:
+            _PARSERS[category] = CodeParser()
+        elif category == FileCategory.MEDIA:
+            _PARSERS[category] = MediaParser()
+        elif category == FileCategory.WEB:
+            _PARSERS[category] = WebParser()
         else:
             return None
     return _PARSERS[category]

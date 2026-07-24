@@ -1,9 +1,12 @@
 import logging
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, UploadFile
 
 from app.config import get_settings
-from app.models.schemas import Job
+from app.models.schemas import FileProgress, Job, JobStatus
+from app.parsers.archive_expand import expand_archive, is_archive
+from app.parsers.router import classify
 from app.pipeline.job_manager import get_job_manager
 from app.storage.file_store import save_upload
 
@@ -30,9 +33,27 @@ async def ingest_files(files: list[UploadFile]) -> Job:
         path = await save_upload(job.job_id, f.filename or "unnamed", content)
         saved_paths.append(path)
 
-    # Re-point job's file progress entries at the saved disk paths.
-    for progress, path in zip(job.files, saved_paths):
-        progress.filename = path
+    # Archive Agent (L2): expand any ZIP/TAR uploads into their member files
+    # before the job's file list is finalized, so each extracted file flows
+    # through the normal per-file pipeline like anything else. The archive
+    # itself is not processed as a "file" -- only its contents are.
+    final_paths: list[str] = []
+    archive_warnings: list[str] = []
+    for path in saved_paths:
+        if is_archive(path):
+            extract_dir = str(Path(path).parent / "extracted")
+            members, warnings = expand_archive(path, extract_dir)
+            archive_warnings.extend(warnings)
+            if not members:
+                archive_warnings.append(f"{Path(path).name}: archive produced no usable files.")
+            final_paths.extend(members)
+        else:
+            final_paths.append(path)
 
-    manager.start(job.job_id, saved_paths)
+    job.files = [
+        FileProgress(filename=p, category=classify(p), status=JobStatus.QUEUED) for p in final_paths
+    ]
+    job.warnings = archive_warnings
+
+    manager.start(job.job_id, final_paths)
     return job

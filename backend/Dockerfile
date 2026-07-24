@@ -58,6 +58,8 @@ RUN pip install --no-cache-dir --timeout 100 --retries 5 -r requirements/embeddi
 RUN pip install --no-cache-dir --timeout 100 --retries 5 -r requirements/graph.txt
 RUN pip install --no-cache-dir --timeout 100 --retries 5 -r requirements/pdf.txt
 RUN pip install --no-cache-dir --timeout 100 --retries 5 -r requirements/ocr.txt
+RUN pip install --no-cache-dir --timeout 100 --retries 5 -r requirements/office.txt
+RUN pip install --no-cache-dir --timeout 100 --retries 5 -r requirements/web.txt
 RUN pip install --no-cache-dir --timeout 100 --retries 5 -r requirements/data.txt
 RUN pip install --no-cache-dir --timeout 100 --retries 5 -r requirements/utils.txt
 

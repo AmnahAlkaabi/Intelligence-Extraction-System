@@ -12,5 +12,7 @@
 -r requirements/graph.txt
 -r requirements/pdf.txt
 -r requirements/ocr.txt
+-r requirements/office.txt
+-r requirements/web.txt
 -r requirements/data.txt
 -r requirements/utils.txt

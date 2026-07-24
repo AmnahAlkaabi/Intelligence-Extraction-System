@@ -1,0 +1,4 @@
+# Web / XML specialist -- HTML (BeautifulSoup, handles real-world
+# malformed markup) and XML/GeoJSON (lxml).
+beautifulsoup4==4.15.0
+lxml==6.1.1

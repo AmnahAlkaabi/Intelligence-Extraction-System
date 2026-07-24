@@ -79,6 +79,16 @@ class ParsedDocument(BaseModel):
         return "\n".join(b.text for b in self.text_blocks if b.text.strip())
 
 
+class DataQuality(BaseModel):
+    """Deterministic per-file quality assessment (L3 Data Quality agent) --
+    computed from parser warnings, OCR confidence, and extraction yield,
+    not LLM-guessed."""
+    source_file: str
+    score: float               # 0-100 composite
+    completeness: str          # short human-readable status
+    issues: list[str] = []
+
+
 # ------------------------------------------------------------- extraction --
 
 class Entity(BaseModel):
