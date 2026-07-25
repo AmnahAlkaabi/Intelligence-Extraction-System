@@ -7,13 +7,21 @@ that entity's relations. Both are folded into the Kimi2 prompt so answers
 can cite specific text passages *and* reason over the structured graph
 (ownership chains, cross-document links) — this is what distinguishes it
 from plain vector-only RAG.
+
+When Neo4j is unreachable (or returns nothing), retrieval falls back to
+local_vector_store's brute-force cosine search over the same Chunk
+embeddings the pipeline already computed for this job -- see
+local_vector_store.py for why that data is available for free. That path
+loses the graph-facts expansion (no Neo4j, no relations to traverse) but
+still lets chat answer from the document text instead of failing outright.
 """
 import logging
 
 from app.embeddings.bge import get_embedder
+from app.graph import local_vector_store
 from app.graph.neo4j_client import get_store
 from app.llm.client import get_llm_client
-from app.models.schemas import ChatMessage, ChatResponse, Citation
+from app.models.schemas import ChatMessage, ChatResponse, Chunk, Citation
 
 logger = logging.getLogger(__name__)
 
@@ -33,45 +41,58 @@ say so plainly — do not guess or use outside knowledge.
 """
 
 
-async def answer_question(job_id: str, message: str, history: list[ChatMessage]) -> ChatResponse:
+async def answer_question(
+    job_id: str, message: str, history: list[ChatMessage], fallback_chunks: list[Chunk] | None = None,
+) -> ChatResponse:
     embedder = get_embedder()
     store = get_store()
+    query_vec = await embedder.embed_query(message)
 
     # Fast preflight, same rationale as the chat-model check below: a dead
-    # or unauthorized Neo4j should surface as a clear degraded-mode answer
-    # in ~8s, not bubble up as an unhandled exception -> 500 from the route.
+    # or unauthorized Neo4j should surface quickly rather than bubbling up
+    # as an unhandled exception -> 500 from the route. It no longer bails
+    # out immediately, though -- the local fallback below may still be able
+    # to answer from this job's already-computed chunk embeddings.
     neo4j_reachable, neo4j_detail = await store.check_reachable(timeout_s=8.0)
-    if not neo4j_reachable:
-        return ChatResponse(
-            answer=f"The knowledge graph is currently unreachable: {neo4j_detail} "
-                   f"Verify Neo4j is up and the credentials match, then try again.",
-            citations=[], uncertain=True,
-        )
 
-    try:
-        query_vec = await embedder.embed_query(message)
-        hits = await store.vector_search(job_id, query_vec, top_k=8)
-    except Exception:
-        logger.exception("Vector search failed for job %s", job_id)
-        return ChatResponse(
-            answer="Retrieval from the knowledge graph failed unexpectedly. "
-                   "Check the backend logs for details, then try again.",
-            citations=[], uncertain=True,
-        )
+    degraded = False
+    hits: list[dict] = []
+    graph_facts: list[dict] = []
+
+    if neo4j_reachable:
+        try:
+            hits = await store.vector_search(job_id, query_vec, top_k=8)
+        except Exception:
+            logger.exception("Vector search failed for job %s", job_id)
+            hits = []
+        if hits:
+            try:
+                graph_facts = await store.expand_entities_for_chunks(job_id, [h["chunk_id"] for h in hits])
+            except Exception:
+                logger.exception("Graph expansion failed for job %s", job_id)
+                graph_facts = []
+    else:
+        logger.warning("Neo4j unreachable for job %s (%s) — trying local vector fallback.", job_id, neo4j_detail)
+
+    if not hits and fallback_chunks:
+        hits = local_vector_store.search(fallback_chunks, query_vec, top_k=8)
+        if hits:
+            degraded = True
 
     if not hits:
+        if not neo4j_reachable:
+            return ChatResponse(
+                answer=f"The knowledge graph is currently unreachable: {neo4j_detail} "
+                       f"No local fallback content is available for this job either (it may have been "
+                       f"processed by a different backend instance, or hasn't finished parsing yet). "
+                       f"Verify Neo4j is up and the credentials match, then try again.",
+                citations=[], uncertain=True,
+            )
         return ChatResponse(
             answer="I don't have any indexed content to answer this from yet. "
                    "Make sure the analysis job has completed before asking questions.",
             citations=[], uncertain=True,
         )
-
-    chunk_ids = [h["chunk_id"] for h in hits]
-    try:
-        graph_facts = await store.expand_entities_for_chunks(job_id, chunk_ids)
-    except Exception:
-        logger.exception("Graph expansion failed for job %s", job_id)
-        graph_facts = []
 
     context_parts = ["--- Retrieved passages ---"]
     for h in hits:
@@ -125,4 +146,4 @@ async def answer_question(job_id: str, message: str, history: list[ChatMessage])
     ]
     uncertain = any(p in answer_text.lower() for p in ["don't know", "not contain", "no information", "cannot find"])
 
-    return ChatResponse(answer=answer_text, citations=citations, uncertain=uncertain)
+    return ChatResponse(answer=answer_text, citations=citations, uncertain=uncertain, degraded=degraded)

@@ -373,3 +373,6 @@ class ChatResponse(BaseModel):
     answer: str
     citations: list[Citation] = []
     uncertain: bool = False
+    # True when this answer came from the local text-similarity fallback
+    # (Neo4j unreachable) instead of full GraphRAG -- see graphrag.py.
+    degraded: bool = False

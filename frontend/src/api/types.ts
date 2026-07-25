@@ -199,4 +199,5 @@ export interface ChatResponse {
   answer: string;
   citations: Citation[];
   uncertain: boolean;
+  degraded: boolean;
 }

@@ -5,6 +5,7 @@ import { sendChatMessage } from "../api/client";
 interface DisplayMessage extends ChatMessage {
   citations?: Citation[];
   uncertain?: boolean;
+  degraded?: boolean;
 }
 
 export function ChatPanel({ jobId }: { jobId: string }) {
@@ -24,7 +25,7 @@ export function ChatPanel({ jobId }: { jobId: string }) {
       const resp = await sendChatMessage(jobId, text, history);
       setMessages((prev) => [
         ...prev,
-        { role: "assistant", content: resp.answer, citations: resp.citations, uncertain: resp.uncertain },
+        { role: "assistant", content: resp.answer, citations: resp.citations, uncertain: resp.uncertain, degraded: resp.degraded },
       ]);
     } catch (e) {
       setMessages((prev) => [
@@ -49,6 +50,11 @@ export function ChatPanel({ jobId }: { jobId: string }) {
         {messages.map((m, i) => (
           <div key={i} className={`chat-msg chat-msg-${m.role}`}>
             <div className="chat-msg-bubble">
+              {m.degraded && (
+                <span className="degraded-flag" title="Neo4j was unreachable — answered from local text search only, without knowledge-graph reasoning.">
+                  ⚡ text search only (graph unavailable)
+                </span>
+              )}
               {m.content}
               {m.uncertain && <span className="uncertain-flag">⚠ low confidence</span>}
             </div>
