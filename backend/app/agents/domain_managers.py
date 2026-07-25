@@ -50,6 +50,19 @@ _SPECIALIST_NAMES = {
 }
 
 
+def _assess_quality_safe(doc, result: DomainResult, file_path: str):
+    """assess_quality() is pure/deterministic but not infallible (e.g. a
+    malformed TableBlock) -- the two early-return branches below call it
+    without the surrounding try/except the main path uses, so wrap it here
+    once rather than duplicating the pattern."""
+    try:
+        return assess_quality(doc, result)
+    except Exception:
+        logger.exception("Data quality assessment failed for %s", file_path)
+        result.errors.append("Data quality assessment step failed")
+        return None
+
+
 async def process_file(
     file_path: str, unreachable_backends: set[str] | None = None, job: Job | None = None
 ) -> DomainResult:
@@ -75,8 +88,19 @@ async def process_file(
         raise
 
     activity = start_activity(job, "Translator", file_path)
-    doc = await translate_document(doc, unreachable_backends)
-    finish_activity(activity, "completed")
+    try:
+        doc = await translate_document(doc, unreachable_backends)
+        finish_activity(activity, "completed")
+    except Exception:
+        # Translation is best-effort enrichment, not a hard dependency of
+        # the rest of the pipeline -- a failure here (e.g. a malformed
+        # backend response) shouldn't take down extraction for a file that
+        # parsed fine. Continue with the untranslated doc rather than
+        # raising, and record why so it's visible on the file's card
+        # instead of leaving this activity stuck at "running" forever.
+        logger.exception("Translation failed for %s", file_path)
+        doc.warnings.append("Translation step failed — proceeding with untranslated text.")
+        finish_activity(activity, "failed")
 
     result = DomainResult(
         domain=doc.category.value, source_file=file_path, tables=doc.tables,
@@ -89,9 +113,14 @@ async def process_file(
     text = doc.full_text()
     if not text.strip() or doc.category not in _TEXT_CATEGORIES:
         activity = start_activity(job, "Chunk/Embed Extractor", file_path)
-        result.chunks = await chunk_and_embed(doc)
-        finish_activity(activity, "completed")
-        result.quality = assess_quality(doc, result)
+        try:
+            result.chunks = await chunk_and_embed(doc)
+            finish_activity(activity, "completed")
+        except Exception:
+            logger.exception("Chunk+embed failed for %s", file_path)
+            result.errors.append("Chunk+embed step failed")
+            finish_activity(activity, "failed")
+        result.quality = _assess_quality_safe(doc, result, file_path)
         return result
 
     activity = start_activity(job, "Chunk/Embed Extractor", file_path)
@@ -110,7 +139,7 @@ async def process_file(
         result.errors.append(msg)
         for name in ("Entity Extractor", "PII Extractor", "Financial Extractor", "Relation Extractor"):
             finish_activity(start_activity(job, name, file_path), "skipped")
-        result.quality = assess_quality(doc, result)
+        result.quality = _assess_quality_safe(doc, result, file_path)
         return result
 
     activity = start_activity(job, "Entity Extractor", file_path)
@@ -155,6 +184,11 @@ async def process_file(
         logger.exception("Summary failed for %s", file_path)
 
     activity = start_activity(job, "Data Quality Validator", file_path)
-    result.quality = assess_quality(doc, result)
-    finish_activity(activity, "completed")
+    try:
+        result.quality = assess_quality(doc, result)
+        finish_activity(activity, "completed")
+    except Exception:
+        logger.exception("Data quality assessment failed for %s", file_path)
+        result.errors.append("Data quality assessment step failed")
+        finish_activity(activity, "failed")
     return result
