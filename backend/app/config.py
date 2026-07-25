@@ -69,6 +69,7 @@ class Settings(BaseSettings):
     chunk_size_tokens: int = 512
     chunk_overlap_tokens: int = 64
     max_parallel_files: int = 4
+    max_parallel_files_global: int = 8  # cap across ALL concurrently-running jobs, not just within one
     job_retry_limit: int = 2
 
     # --- API ---

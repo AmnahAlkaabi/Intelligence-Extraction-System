@@ -141,18 +141,29 @@ class Neo4jStore:
                 )
 
     async def vector_search(self, job_id: str, query_vector: list[float], top_k: int = 8) -> list[dict]:
+        """Neo4j's native vector index ranks globally across every job
+        sharing it, and the job_id filter only applies *after* that ranking
+        -- so a plain `queryNodes(index, top_k, vector)` can return zero
+        rows for this job even when it has plenty of relevant chunks, once
+        enough other jobs' chunks are competing for the same top_k slots.
+        Over-fetch a much larger candidate set before filtering so this
+        job's chunks have room to surface; not a hard guarantee at
+        unbounded scale, but it removes the failure mode for the realistic
+        range of concurrently-indexed jobs this deployment expects."""
         settings = self._settings
+        candidate_k = min(max(top_k * 25, 200), 5000)
         async with self._driver.session(database=settings.neo4j_database) as session:
             result = await session.run(
                 f"""
-                CALL db.index.vector.queryNodes('{settings.vector_index_name}', $top_k, $vector)
+                CALL db.index.vector.queryNodes('{settings.vector_index_name}', $candidate_k, $vector)
                 YIELD node, score
                 WHERE node.job_id = $job_id
                 RETURN node.chunk_id AS chunk_id, node.text AS text,
                        node.source_file AS source_file, node.page AS page, score
                 ORDER BY score DESC
+                LIMIT $top_k
                 """,
-                top_k=top_k, vector=query_vector, job_id=job_id,
+                candidate_k=candidate_k, top_k=top_k, vector=query_vector, job_id=job_id,
             )
             return [record.data() async for record in result]
 

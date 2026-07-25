@@ -18,6 +18,16 @@ from app.config import get_settings
 logger = logging.getLogger(__name__)
 
 
+class LLMJSONParseError(Exception):
+    """The model's response couldn't be parsed as JSON even after the
+    markdown-fence-stripping fallback. Raised rather than silently
+    returning {} so this failure mode is distinguishable from the model
+    legitimately reporting "nothing found" -- callers already catch and
+    log extraction/synthesis failures by step and source file; swallowing
+    it here instead would erase that attribution and look identical to a
+    real empty result."""
+
+
 @dataclass
 class LLMResponse:
     text: str
@@ -151,8 +161,7 @@ def _safe_json_parse(text: str) -> dict:
                 return json.loads(text[start : end + 1])
             except json.JSONDecodeError:
                 pass
-        logger.error("Failed to parse LLM JSON output: %s", text[:500])
-        return {}
+        raise LLMJSONParseError(text[:500])
 
 
 _client_singleton: LLMClient | None = None

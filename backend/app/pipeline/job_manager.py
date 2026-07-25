@@ -46,6 +46,13 @@ class JobManager:
         self._jobs: dict[str, Job] = {}
         self._domain_results: dict[str, list[DomainResult]] = {}
         self._tasks: dict[str, asyncio.Task] = {}
+        # Each job's own semaphore only bounds concurrency *within* that
+        # job -- with several jobs running at once (multiple users
+        # uploading concurrently) their per-job semaphores don't coordinate
+        # with each other at all, so total in-flight file pipelines (each
+        # hitting the LLM backends/Neo4j/embedder) is unbounded. This one
+        # is shared across every job's _process_one to cap that total.
+        self._global_semaphore = asyncio.Semaphore(get_settings().max_parallel_files_global)
 
     def create_job(self, file_paths: list[str]) -> Job:
         job = Job(files=[
@@ -102,6 +109,21 @@ class JobManager:
 
     async def _run(self, job_id: str, file_paths: list[str]) -> None:
         job = self._jobs[job_id]
+        try:
+            await self._run_unguarded(job, job_id, file_paths)
+        except Exception as exc:  # noqa: BLE001
+            # Belt-and-suspenders: every stage below already has its own
+            # try/except, but this catches anything upstream of/between them
+            # (e.g. the preflight reachability check itself raising) so a
+            # job can never silently stall forever with status left at
+            # QUEUED/PARSING and job.error unset -- asyncio.create_task in
+            # start() has nothing else watching for this task's exception.
+            logger.exception("Unhandled failure running job %s", job_id)
+            job.status = JobStatus.FAILED
+            job.error = str(exc)
+            await self.touch(job)
+
+    async def _run_unguarded(self, job: Job, job_id: str, file_paths: list[str]) -> None:
         settings = get_settings()
         semaphore = asyncio.Semaphore(settings.max_parallel_files)
 
@@ -129,13 +151,13 @@ class JobManager:
         neo4j_reachable = neo4j_ok
 
         job.status = JobStatus.PARSING
-        self.touch(job)
+        await self.touch(job)
 
         async def _process_one(fp: str) -> DomainResult:
-            async with semaphore:
+            async with semaphore, self._global_semaphore:
                 progress = next(f for f in job.files if f.filename == fp)
                 progress.status = JobStatus.EXTRACTING
-                self.touch(job)
+                await self.touch(job)
                 try:
                     result = await process_file(fp, unreachable_backends=unreachable_backends, job=job)
                     progress.status = JobStatus.COMPLETE
@@ -153,14 +175,14 @@ class JobManager:
                     progress.status = JobStatus.FAILED
                     progress.error = str(exc)
                     result = DomainResult(domain="unknown", source_file=fp, errors=[str(exc)])
-                self.touch(job)
+                await self.touch(job)
                 return result
 
         results = await asyncio.gather(*(_process_one(fp) for fp in file_paths))
         self._domain_results[job_id] = results
 
         job.status = JobStatus.GRAPH_BUILD
-        self.touch(job)
+        await self.touch(job)
         if neo4j_reachable:
             try:
                 await store.ensure_schema()
@@ -174,7 +196,7 @@ class JobManager:
             logger.info("Skipping graph ingest for job %s — Neo4j was unreachable at preflight.", job_id)
 
         job.status = JobStatus.SYNTHESIZING
-        self.touch(job)
+        await self.touch(job)
         synth_activity = start_activity(job, "BI Synthesizer", "(all files)")
         try:
             synthesis_backend = llm_client.backend_for_role("synthesis")
@@ -197,13 +219,19 @@ class JobManager:
             job.status = JobStatus.FAILED
             job.error = str(exc)
             finish_activity(synth_activity, "failed")
-        self.touch(job)
+        await self.touch(job)
 
-    def touch(self, job: Job) -> None:
+    async def touch(self, job: Job) -> None:
         job.updated_at = datetime.now(timezone.utc)
         done = sum(1 for f in job.files if f.status in (JobStatus.COMPLETE, JobStatus.FAILED))
         job.progress_pct = round(100.0 * done / max(len(job.files), 1) * 0.9, 1)  # reserve 10% for synth
-        write_job_state(job)
+        # touch() fires on nearly every state change during processing
+        # (once per file per stage); a completed job's state can be sizeable
+        # (full knowledge graph, all extraction results), so the disk write
+        # is offloaded to a thread rather than blocking the event loop --
+        # and with it, every other job's progress and every API request --
+        # for the duration of the write.
+        await asyncio.to_thread(write_job_state, job)
 
 
 _manager_singleton: JobManager | None = None

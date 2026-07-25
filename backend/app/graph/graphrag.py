@@ -44,7 +44,7 @@ say so plainly — do not guess or use outside knowledge.
 async def answer_question(
     job_id: str, message: str, history: list[ChatMessage], fallback_chunks: list[Chunk] | None = None,
 ) -> ChatResponse:
-    embedder = get_embedder()
+    embedder = await get_embedder()
     store = get_store()
     query_vec = await embedder.embed_query(message)
 

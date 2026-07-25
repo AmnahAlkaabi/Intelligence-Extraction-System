@@ -58,10 +58,20 @@ class BGEEmbedder:
 
 
 _embedder_singleton: BGEEmbedder | None = None
+_embedder_lock = asyncio.Lock()
 
 
-def get_embedder() -> BGEEmbedder:
+async def get_embedder() -> BGEEmbedder:
+    """First call loads the model from disk onto the configured device,
+    which can take anywhere from seconds to tens of seconds -- constructing
+    BGEEmbedder() directly on the event loop would block every other job
+    and API request for that whole window, so the (one-time) build is
+    offloaded to a thread. The lock only serializes that one-time build;
+    every call after the first returns the cached singleton immediately."""
     global _embedder_singleton
-    if _embedder_singleton is None:
-        _embedder_singleton = BGEEmbedder()
+    if _embedder_singleton is not None:
+        return _embedder_singleton
+    async with _embedder_lock:
+        if _embedder_singleton is None:
+            _embedder_singleton = await asyncio.to_thread(BGEEmbedder)
     return _embedder_singleton

@@ -37,7 +37,7 @@ async def rename_job(job_id: str, body: RenameJobRequest) -> Job:
         raise HTTPException(404, "Job not found.")
     name = body.name.strip()
     job.name = name or None
-    get_job_manager().touch(job)
+    await get_job_manager().touch(job)
     return job
 
 

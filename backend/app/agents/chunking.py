@@ -27,7 +27,7 @@ def _split_into_chunks(text: str, size: int, overlap: int) -> list[str]:
 
 async def chunk_and_embed(doc: ParsedDocument) -> list[Chunk]:
     settings = get_settings()
-    embedder = get_embedder()
+    embedder = await get_embedder()
 
     raw_chunks: list[Chunk] = []
     for block in doc.text_blocks:
