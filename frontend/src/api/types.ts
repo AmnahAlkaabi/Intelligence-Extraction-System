@@ -73,7 +73,7 @@ export interface BITableColumn {
   source_column: string;
   data_type_guess: string;
   sample_values: string[];
-  join_condition?: string | null;
+  rule: string;
   comments?: string | null;
 }
 
@@ -85,6 +85,7 @@ export interface BITableProposal {
   columns: BITableColumn[];
   join_logic?: string | null;
   join_quality?: string | null;
+  target_file: string;
 }
 
 export interface BIReport {

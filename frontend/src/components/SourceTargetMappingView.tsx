@@ -35,9 +35,8 @@ export function SourceTargetMappingView({ mapping, jobId }: { mapping: SourceTar
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Source Column</th><th>Source File</th><th>Target Column</th>
-                  <th>Proposed Table Name</th><th>Join Condition</th><th>Comments</th>
-                  <th>Sample Value</th><th>Type</th>
+                  <th>Source Column</th><th>Source File</th><th>Target Column</th><th>Target File</th>
+                  <th>Rule</th><th>Comments</th><th>Sample Value</th><th>Proposed Target Table Name</th>
                 </tr>
               </thead>
               <tbody>
@@ -46,13 +45,13 @@ export function SourceTargetMappingView({ mapping, jobId }: { mapping: SourceTar
                     <td className="mono">{c.source_column}</td>
                     <td className="mono small">{c.source_file.split("/").pop()}</td>
                     <td className="mono" style={{ color: "var(--accent)" }}>{c.target_column}</td>
-                    <td className="small">{t.name}</td>
-                    <td className="mono small">{c.join_condition ?? "—"}</td>
+                    <td className="mono small">{t.target_file}</td>
+                    <td className="mono small">{c.rule}</td>
                     <td className="small">
                       {c.comments ? <span className="mapping-comment">{c.comments}</span> : <span className="muted">—</span>}
                     </td>
                     <td className="small muted">{c.sample_values[0] ?? "—"}</td>
-                    <td><span className="dtype-chip">{c.data_type_guess}</span></td>
+                    <td className="small">{t.name}</td>
                   </tr>
                 ))}
               </tbody>

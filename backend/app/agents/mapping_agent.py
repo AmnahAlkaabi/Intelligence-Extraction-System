@@ -137,6 +137,15 @@ def _short_name(source_file: str, table: TableBlock) -> str:
     return base.replace("_", " ").strip().title()
 
 
+def _target_file(proposed_table_name: str) -> str:
+    """The proposed table name, slugified into a filename -- the target
+    file IS the proposed table (this app's BI layer is a set of exported
+    CSVs, one per proposal), so it's always derived from the name rather
+    than an independent value that could drift from it."""
+    slug = re.sub(r"[^a-z0-9]+", "_", proposed_table_name.lower()).strip("_")
+    return f"{slug or 'table'}.csv"
+
+
 def _classify_entity(standardized_columns: set[str]) -> str | None:
     best_type, best_score = None, 0
     for entity, keywords in _ENTITY_ARCHETYPES.items():
@@ -163,7 +172,7 @@ def _dq_issue_lookup(results: list[DomainResult]) -> dict[tuple[str, str, str], 
 
 def _table_columns(
     source_file: str, label: str, table: TableBlock,
-    join_condition: str | None, dq_lookup: dict[tuple[str, str, str], list[str]],
+    rule: str, dq_lookup: dict[tuple[str, str, str], list[str]],
 ) -> list[BITableColumn]:
     table_key = table.sheet or table.caption or table.table_id
     cols = []
@@ -179,7 +188,7 @@ def _table_columns(
             source_column=header,
             data_type_guess=guess_column_type(header, samples),
             sample_values=samples[:5],
-            join_condition=join_condition,
+            rule=rule,
             comments="; ".join(issues) if issues else None,
         ))
     return cols
@@ -300,6 +309,7 @@ def build_bi_tables(results: list[DomainResult]) -> list[BITableProposal]:
                     columns=columns,
                     join_logic=join_condition,
                     join_quality="; ".join(quality_bits),
+                    target_file=_target_file(name),
                 ))
 
     # Standalone tables: any table never used in a join above still gets a
@@ -309,7 +319,8 @@ def build_bi_tables(results: list[DomainResult]) -> list[BITableProposal]:
         key = (result.source_file, table.table_id)
         if key in joined_keys:
             continue
-        columns = _table_columns(result.source_file, label, table, None, dq_lookup)
+        rule = f"Direct load from {_basename(result.source_file)} -- standardized column names, no join."
+        columns = _table_columns(result.source_file, label, table, rule, dq_lookup)
         entity = _classify_entity({c.target_column for c in columns})
         name = entity or _short_name(result.source_file, table)
         proposals.append(BITableProposal(
@@ -320,6 +331,7 @@ def build_bi_tables(results: list[DomainResult]) -> list[BITableProposal]:
             columns=columns,
             join_logic=None,
             join_quality=None,
+            target_file=_target_file(name),
         ))
 
     return proposals
