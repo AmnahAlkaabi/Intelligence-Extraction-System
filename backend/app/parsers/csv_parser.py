@@ -1,6 +1,7 @@
 """CSV / TSV Agent (L2) — pandas-based ingest with schema profiling."""
 import asyncio
 import logging
+import warnings
 
 import pandas as pd
 
@@ -22,7 +23,16 @@ class CSVParser(BaseParser):
         doc = ParsedDocument(source_file=file_path, category=self.category)
         try:
             sep = "\t" if file_path.lower().endswith(".tsv") else None
-            df = pd.read_csv(file_path, sep=sep, engine="python", on_bad_lines="warn")
+            # on_bad_lines="warn" reports malformed rows via the stdlib
+            # warnings module rather than raising -- left uncaptured, that
+            # warning only ever reaches a server log (if that), so rows get
+            # silently dropped from the analyst's point of view. Capture it
+            # and surface it on doc.warnings like every other data-loss note.
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always")
+                df = pd.read_csv(file_path, sep=sep, engine="python", on_bad_lines="warn")
+            for w in caught:
+                doc.warnings.append(f"Malformed row(s) skipped while parsing CSV: {w.message}")
 
             profile_lines = [f"Rows: {len(df)}, Columns: {len(df.columns)}"]
             for col in df.columns:

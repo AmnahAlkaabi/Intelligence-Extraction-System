@@ -20,8 +20,24 @@ class ExcelParser(BaseParser):
 
     def _parse_sync(self, file_path: str) -> ParsedDocument:
         doc = ParsedDocument(source_file=file_path, category=self.category)
+        lower = file_path.lower()
+        if lower.endswith(".ods"):
+            # openpyxl/xlrd can't read OpenDocument spreadsheets at all
+            # (that needs odfpy, not currently a dependency) -- previously
+            # this fell through to openpyxl and failed with a cryptic
+            # "not a zip file"/engine error; report the real reason instead.
+            doc.warnings.append(
+                "ODS (OpenDocument Spreadsheet) files aren't supported in this deployment -- "
+                "convert to .xlsx first."
+            )
+            return doc
+        # openpyxl only reads the modern .xlsx/.xlsm zip-based format; the
+        # legacy binary .xls format needs xlrd instead (already a bundled
+        # dependency for exactly this) -- forcing openpyxl on a .xls file
+        # made it fail outright despite being an otherwise-valid workbook.
+        engine = "xlrd" if lower.endswith(".xls") else "openpyxl"
         try:
-            sheets = pd.read_excel(file_path, sheet_name=None, engine="openpyxl")
+            sheets = pd.read_excel(file_path, sheet_name=None, engine=engine)
             doc.text_blocks.append(
                 TextBlock(text=f"Workbook contains {len(sheets)} sheet(s): {', '.join(sheets)}",
                           kind="paragraph")

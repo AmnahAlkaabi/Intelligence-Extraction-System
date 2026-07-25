@@ -82,8 +82,12 @@ class WebParser(BaseParser):
         tree = etree.parse(file_path, parser)
         root = tree.getroot()
 
+        depth_cap_hit = False
+
         def walk(el, depth: int = 0) -> None:
+            nonlocal depth_cap_hit
             if depth > 50:  # guard against pathological/adversarial nesting
+                depth_cap_hit = True
                 return
             text = (el.text or "").strip()
             if text:
@@ -96,6 +100,10 @@ class WebParser(BaseParser):
         doc.metadata = {"root_tag": etree.QName(root).localname, "parser": "lxml"}
         if not doc.text_blocks:
             doc.warnings.append("No extractable text found in XML document.")
+        if depth_cap_hit:
+            doc.warnings.append(
+                "XML document exceeds 50 levels of nesting -- content past that depth was not extracted."
+            )
 
     def _parse_geojson(self, file_path: str, doc: ParsedDocument) -> None:
         with open(file_path, encoding="utf-8") as f:

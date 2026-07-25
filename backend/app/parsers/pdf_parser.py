@@ -108,7 +108,21 @@ class PDFParser(BaseParser):
                                 headers = [c.text for c in grid[0]]
                                 rows = [[c.text for c in r] for r in grid[1:]]
                         except AttributeError:
-                            pass
+                            # Docling detected a table but its grid shape
+                            # wasn't what we expected -- appending an empty
+                            # TableBlock silently (the prior behavior) looks
+                            # to the analyst like a genuinely empty table
+                            # instead of a table that failed to parse.
+                            logger.warning(
+                                "Docling table grid unreadable on %s (page %s) -- table dropped",
+                                file_path, page_no,
+                            )
+                            doc.warnings.append(
+                                f"A table on page {page_no} could not be parsed and was skipped."
+                                if page_no is not None else
+                                "A table could not be parsed and was skipped."
+                            )
+                            continue
                     doc.tables.append(TableBlock(page=page_no, headers=headers, rows=rows))
                 elif text:
                     kind = "heading" if label in ("title", "section_header") else "paragraph"

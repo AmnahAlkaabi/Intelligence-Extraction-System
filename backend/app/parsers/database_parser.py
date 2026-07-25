@@ -43,22 +43,31 @@ class DatabaseParser(BaseParser):
                                                        f"{', '.join(table_names)}", kind="paragraph"))
 
                 for table in table_names:
-                    cur.execute(f'PRAGMA table_info("{table}")')
-                    columns = [row[1] for row in cur.fetchall()]
-                    cur.execute(f'SELECT COUNT(*) FROM "{table}"')
-                    row_count = cur.fetchone()[0]
+                    # One table's failure (locked, corrupted page, an
+                    # unreadable column type) shouldn't abort every table
+                    # after it in table_names -- catch per-table so the
+                    # loop always reaches every table, not just the ones
+                    # before the first failure.
+                    try:
+                        cur.execute(f'PRAGMA table_info("{table}")')
+                        columns = [row[1] for row in cur.fetchall()]
+                        cur.execute(f'SELECT COUNT(*) FROM "{table}"')
+                        row_count = cur.fetchone()[0]
 
-                    doc.text_blocks.append(TextBlock(
-                        text=f"Table '{table}': {row_count} rows, columns: {', '.join(columns)}",
-                        kind="paragraph",
-                    ))
+                        doc.text_blocks.append(TextBlock(
+                            text=f"Table '{table}': {row_count} rows, columns: {', '.join(columns)}",
+                            kind="paragraph",
+                        ))
 
-                    cur.execute(f'SELECT * FROM "{table}" LIMIT {MAX_ROWS_PER_TABLE}')
-                    rows = [[str(v) if v is not None else "" for v in row] for row in cur.fetchall()]
-                    doc.tables.append(TableBlock(
-                        sheet=table, headers=columns, rows=rows,
-                        caption=f"{table} (showing up to {MAX_ROWS_PER_TABLE} of {row_count} rows)",
-                    ))
+                        cur.execute(f'SELECT * FROM "{table}" LIMIT {MAX_ROWS_PER_TABLE}')
+                        rows = [[str(v) if v is not None else "" for v in row] for row in cur.fetchall()]
+                        doc.tables.append(TableBlock(
+                            sheet=table, headers=columns, rows=rows,
+                            caption=f"{table} (showing up to {MAX_ROWS_PER_TABLE} of {row_count} rows)",
+                        ))
+                    except sqlite3.DatabaseError as exc:
+                        logger.warning("Failed to read table '%s' in %s: %s", table, file_path, exc)
+                        doc.warnings.append(f"Table '{table}' could not be read and was skipped: {exc}")
 
                 doc.metadata = {"table_count": len(table_names), "parser": "sqlite3"}
             finally:

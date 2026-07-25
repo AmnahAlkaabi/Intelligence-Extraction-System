@@ -38,11 +38,24 @@ class JSONParser(BaseParser):
             is_jsonl = file_path.lower().endswith(".jsonl")
             records: list = []
             if is_jsonl:
+                # Each JSONL line is an independent record -- one malformed
+                # line shouldn't discard every other (potentially valid)
+                # record in the file the way letting the exception bubble
+                # up to the outer try/except would.
+                bad_lines = 0
                 with open(file_path, encoding="utf-8") as f:
-                    for line in f:
+                    for lineno, line in enumerate(f, start=1):
                         line = line.strip()
-                        if line:
+                        if not line:
+                            continue
+                        try:
                             records.append(json.loads(line))
+                        except json.JSONDecodeError as exc:
+                            bad_lines += 1
+                            if bad_lines <= 10:
+                                doc.warnings.append(f"JSONL line {lineno} skipped (invalid JSON): {exc}")
+                if bad_lines > 10:
+                    doc.warnings.append(f"...and {bad_lines - 10} more JSONL line(s) skipped (invalid JSON).")
             else:
                 with open(file_path, encoding="utf-8") as f:
                     data = json.load(f)

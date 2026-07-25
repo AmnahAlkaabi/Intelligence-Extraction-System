@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from pathlib import Path
 
@@ -42,7 +43,11 @@ async def ingest_files(files: list[UploadFile]) -> Job:
     for path in saved_paths:
         if is_archive(path):
             extract_dir = str(Path(path).parent / "extracted")
-            members, warnings = expand_archive(path, extract_dir)
+            # expand_archive does synchronous disk I/O and can decompress a
+            # sizeable amount of data -- running it directly on the event
+            # loop would block every other in-flight request (job status
+            # polling, other uploads) for as long as extraction takes.
+            members, warnings = await asyncio.to_thread(expand_archive, path, extract_dir)
             archive_warnings.extend(warnings)
             if not members:
                 archive_warnings.append(f"{Path(path).name}: archive produced no usable files.")
