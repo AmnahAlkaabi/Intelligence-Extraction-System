@@ -8,9 +8,11 @@ export function BusinessUseCasesView({ report }: { report: BIReport }) {
   return (
     <div>
       <p className="muted" style={{ marginBottom: 16 }}>
-        Tables proposed for the BI layer — computed by standardizing every uploaded table's columns
-        and, where two files share a real overlapping key, cross-linking them into a joined table.
-        Not LLM-guessed: every proposal here is backed by an executed join over the actual rows.
+        Tables proposed for the BI layer, built only from structured sources (CSV, Excel, JSON,
+        database) — computed by standardizing every column and, where two files share a real
+        overlapping key, cross-linking them into a joined table. Recognized as a standard business
+        entity (Customer, Transaction, Staff, ...) when its columns are a clear match. Not
+        LLM-guessed: every proposal here is backed by an executed join over the actual rows.
       </p>
 
       {joined.length > 0 && (

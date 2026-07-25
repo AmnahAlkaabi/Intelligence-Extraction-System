@@ -73,6 +73,8 @@ export interface BITableColumn {
   source_column: string;
   data_type_guess: string;
   sample_values: string[];
+  join_condition?: string | null;
+  comments?: string | null;
 }
 
 export interface BITableProposal {

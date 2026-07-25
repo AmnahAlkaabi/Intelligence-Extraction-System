@@ -161,10 +161,14 @@ def write_markdown_report(job_id: str, output: SynthesisOutput) -> str:
         if t.join_logic:
             lines.append(f"**Join:** `{t.join_logic}`  \n**Join quality:** {t.join_quality}")
             lines.append("")
-        lines += ["| Source File | Source Table | Source Column | Target Column | Type |",
-                  "|---|---|---|---|---|"]
+        lines += ["| Source Column | Source File | Target Column | Join Condition | Comments | Sample Value |",
+                  "|---|---|---|---|---|---|"]
         for c in t.columns:
-            lines.append(f"| {c.source_file} | {c.source_table} | {c.source_column} | {c.target_column} | {c.data_type_guess} |")
+            sample = c.sample_values[0] if c.sample_values else ""
+            lines.append(
+                f"| {c.source_column} | {c.source_file} | {c.target_column} | "
+                f"{c.join_condition or ''} | {c.comments or ''} | {sample} |"
+            )
         lines.append("")
 
     content = "\n".join(lines)
@@ -190,12 +194,18 @@ def write_mapping_csv(job_id: str, output: SynthesisOutput) -> str:
     path = d / "source_target_mapping.csv"
     buf = io.StringIO()
     writer = csv.writer(buf)
-    writer.writerow(["bi_table", "join_logic", "source_file", "source_table", "source_column",
-                      "target_column", "data_type_guess", "sample_values"])
+    writer.writerow([
+        "source_column", "source_file", "target_column", "proposed_table_name",
+        "join_condition", "comments", "sample_value", "source_table", "data_type_guess",
+    ])
     for t in output.source_target_mapping.tables:
         for c in t.columns:
-            writer.writerow([t.name, t.join_logic or "", c.source_file, c.source_table, c.source_column,
-                              c.target_column, c.data_type_guess, "; ".join(c.sample_values)])
+            writer.writerow([
+                c.source_column, c.source_file, c.target_column, t.name,
+                c.join_condition or "", c.comments or "",
+                c.sample_values[0] if c.sample_values else "",
+                c.source_table, c.data_type_guess,
+            ])
     path.write_text(buf.getvalue(), encoding="utf-8")
     return str(path)
 

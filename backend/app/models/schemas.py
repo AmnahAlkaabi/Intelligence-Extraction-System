@@ -224,6 +224,15 @@ class BITableColumn(BaseModel):
     source_column: str
     data_type_guess: str        # id | email | phone | date | number | text
     sample_values: list[str] = []
+    # SQL-style join used to build the proposal this column belongs to, e.g.
+    # "FROM orders.csv LEFT JOIN customers.csv ON orders.csv.customer_id =
+    # customers.csv.id" -- same string repeated on every column of a joined
+    # proposal; None for a standalone (single-file) table.
+    join_condition: str | None = None
+    # Cleaning notes for this exact column, pulled from the Data Quality
+    # agent's already-computed per-column issues (NULLs, garbage values,
+    # type mismatches, ...) -- None if that column had no flagged issues.
+    comments: str | None = None
 
 
 class BITableProposal(BaseModel):
