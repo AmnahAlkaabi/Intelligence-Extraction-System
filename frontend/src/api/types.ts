@@ -146,6 +146,20 @@ export interface TableBlock {
   caption?: string | null;
 }
 
+export interface DataDumpTable extends TableBlock {
+  source_file: string;
+  category: FileCategory;
+}
+
+export interface SourceDocSummary {
+  source_file: string;
+  category: FileCategory;
+  has_preview: boolean;
+  entities: string[];
+  pii_types: string[];
+  text_excerpt?: string | null;
+}
+
 export interface SourceTargetMapping {
   tables: BITableProposal[];
 }

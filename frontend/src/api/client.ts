@@ -1,4 +1,4 @@
-import type { ChatMessage, ChatResponse, Job, TableBlock } from "./types";
+import type { ChatMessage, ChatResponse, DataDumpTable, Job, SourceDocSummary } from "./types";
 
 const BASE = "/api";
 
@@ -53,8 +53,12 @@ export async function deleteJob(jobId: string): Promise<void> {
   }
 }
 
-export async function getDataDumpTables(jobId: string): Promise<TableBlock[]> {
-  return req<TableBlock[]>(`/outputs/${jobId}/data-dump/tables`);
+export async function getDataDumpTables(jobId: string): Promise<DataDumpTable[]> {
+  return req<DataDumpTable[]>(`/outputs/${jobId}/data-dump/tables`);
+}
+
+export async function getDataDumpDocuments(jobId: string): Promise<SourceDocSummary[]> {
+  return req<SourceDocSummary[]>(`/outputs/${jobId}/data-dump/documents`);
 }
 
 export function artifactUrl(jobId: string, artifact: string): string {
@@ -63,6 +67,10 @@ export function artifactUrl(jobId: string, artifact: string): string {
 
 export function tableDownloadUrl(jobId: string, tableFilename: string): string {
   return `${BASE}/outputs/${jobId}/files/tables/${tableFilename}`;
+}
+
+export function sourcePreviewUrl(jobId: string, filename: string): string {
+  return `${BASE}/outputs/${jobId}/files/preview/${encodeURIComponent(filename)}`;
 }
 
 export async function sendChatMessage(

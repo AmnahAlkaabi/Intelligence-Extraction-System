@@ -275,6 +275,26 @@ class DataDump(BaseModel):
     chunk_count: int = 0
 
 
+class DataDumpTable(TableBlock):
+    """TableBlock plus which file it came from -- the raw TableBlock has no
+    source_file (Neo4j/CSV export never needed it), but the Data Dump tab
+    groups tables by file type so it needs one."""
+    source_file: str
+    category: FileCategory
+
+
+class SourceDocSummary(BaseModel):
+    """Per-file card for the Data Dump tab's document previews --
+    deterministic, no LLM call, built directly from this file's
+    DomainResult (same pattern as FileStats)."""
+    source_file: str
+    category: FileCategory
+    has_preview: bool = False          # image/pdf -- frontend renders <img> from the preview route
+    entities: list[str] = []           # distinct entity names, capped
+    pii_types: list[str] = []          # distinct PII categories found
+    text_excerpt: str | None = None    # short excerpt from the first chunk(s)
+
+
 class SourceTargetMapping(BaseModel):
     """One entry per proposed BI table (see BITableProposal) -- the exact
     source-column -> target-column mapping and join/FK-PK logic needed to

@@ -43,6 +43,13 @@ def job_output_dir(job_id: str) -> Path:
     return d
 
 
+def job_upload_dir(job_id: str) -> Path:
+    upload_dir, _ = _ensure_dirs()
+    d = upload_dir / job_id
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
 def delete_job_files(job_id: str) -> None:
     """Removes everything a job owns on disk -- its uploaded source files
     and every generated output artifact (reports, CSVs, job_state.json).

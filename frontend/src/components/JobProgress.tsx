@@ -1,7 +1,8 @@
 import { useState } from "react";
-import type { FileCategory, FileProgress, Job } from "../api/types";
+import type { FileProgress, Job } from "../api/types";
 import { StatusBadge } from "./StatusBadge";
 import { AgentIcon } from "./AgentIcons";
+import { CATEGORY_AGENT, CATEGORY_LABEL, CATEGORY_ORDER } from "../lib/fileCategories";
 
 const TRUNCATE_AT = 110;
 
@@ -20,35 +21,6 @@ export function ErrorText({ text, className = "progress-file-error" }: { text: s
     </div>
   );
 }
-
-// Mirrors backend/app/agents/domain_managers.py's _SPECIALIST_NAMES so the
-// grouped file list uses the exact same glyph as the agent working on it.
-const CATEGORY_AGENT: Record<FileCategory, string> = {
-  pdf: "PDF Specialist",
-  image: "Image/OCR Specialist",
-  csv: "CSV Specialist",
-  excel: "Excel Specialist",
-  json: "JSON Specialist",
-  office: "Office Specialist",
-  email: "Email Specialist",
-  database: "Database Specialist",
-  code: "Code & Log Specialist",
-  archive: "Archive Specialist",
-  media: "Media Specialist",
-  web: "Web/XML Specialist",
-  unknown: "Format Specialist",
-};
-
-const CATEGORY_LABEL: Record<FileCategory, string> = {
-  pdf: "PDF", image: "Image", csv: "CSV", excel: "Excel", json: "JSON",
-  office: "Office", email: "Email", database: "Database", code: "Code & Log",
-  archive: "Archive", media: "Media", web: "Web/XML", unknown: "Other",
-};
-
-const CATEGORY_ORDER: FileCategory[] = [
-  "pdf", "image", "csv", "excel", "json", "office", "email",
-  "database", "code", "archive", "media", "web", "unknown",
-];
 
 function extractionSummary(f: FileProgress): string | null {
   const parts: string[] = [];

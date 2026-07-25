@@ -1,20 +1,31 @@
+import io
+import logging
+import mimetypes
 from pathlib import Path
 
+import pypdfium2 as pdfium
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 
 from app.models.schemas import (
     BIReport,
     ComplianceReport,
+    DataDumpTable,
+    FileCategory,
     JobStatus,
     KnowledgeGraphExport,
+    SourceDocSummary,
     SourceTargetMapping,
     TableBlock,
 )
 from app.pipeline.job_manager import get_job_manager
-from app.storage.file_store import job_output_dir
+from app.storage.file_store import job_output_dir, job_upload_dir
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["outputs"])
+
+_PREVIEW_SCALE = 1.5  # PDF page-1 thumbnail render scale -- readable without being huge
 
 
 def _completed_job(job_id: str):
@@ -46,11 +57,86 @@ async def get_source_target_mapping(job_id: str) -> SourceTargetMapping:
     return _completed_job(job_id).result.source_target_mapping
 
 
-@router.get("/outputs/{job_id}/data-dump/tables", response_model=list[TableBlock])
-async def get_data_dump_tables(job_id: str) -> list[TableBlock]:
+def _category_of(domain: str) -> FileCategory:
+    try:
+        return FileCategory(domain)
+    except ValueError:
+        return FileCategory.UNKNOWN
+
+
+@router.get("/outputs/{job_id}/data-dump/tables", response_model=list[DataDumpTable])
+async def get_data_dump_tables(job_id: str) -> list[DataDumpTable]:
     _completed_job(job_id)
     results = get_job_manager().get_domain_results(job_id)
-    return [t for r in results for t in r.tables]
+    category_by_file = {r.source_file: _category_of(r.domain) for r in results}
+    return [
+        DataDumpTable(**t.model_dump(), source_file=r.source_file, category=category_by_file[r.source_file])
+        for r in results
+        for t in r.tables
+    ]
+
+
+@router.get("/outputs/{job_id}/data-dump/documents", response_model=list[SourceDocSummary])
+async def get_data_dump_documents(job_id: str) -> list[SourceDocSummary]:
+    """One card per source file for the Data Dump tab -- entity/PII counts
+    and a text excerpt, all computed deterministically from this file's
+    already-processed DomainResult (no LLM call, no re-parsing)."""
+    _completed_job(job_id)
+    results = get_job_manager().get_domain_results(job_id)
+    out = []
+    for r in results:
+        category = _category_of(r.domain)
+        out.append(SourceDocSummary(
+            source_file=r.source_file,
+            category=category,
+            has_preview=category in (FileCategory.PDF, FileCategory.IMAGE),
+            entities=sorted({e.name for e in r.entities})[:12],
+            pii_types=sorted({p.category for p in r.pii_findings}),
+            text_excerpt=r.chunks[0].text[:280] if r.chunks else None,
+        ))
+    return out
+
+
+@router.get("/outputs/{job_id}/files/preview/{filename}")
+async def preview_source_file(job_id: str, filename: str) -> Response:
+    """Serves a viewable image for a source file: the raw bytes for an
+    image upload, or a page-1 render for a PDF (same pypdfium2 render path
+    the PDF parser's OCR fallback uses, just for display here rather than
+    OCR input). Lets the Data Dump tab show "what did the OCR/PDF agent
+    actually see" next to what it extracted.
+    """
+    _completed_job(job_id)
+    path = job_upload_dir(job_id) / Path(filename).name
+    if not path.exists():
+        raise HTTPException(404, "Source file not found on disk.")
+
+    content_type, _ = mimetypes.guess_type(path.name)
+    if content_type and content_type.startswith("image/"):
+        return FileResponse(path, media_type=content_type)
+
+    if path.suffix.lower() == ".pdf":
+        try:
+            pdf = pdfium.PdfDocument(str(path))
+            try:
+                page = pdf[0]
+                try:
+                    bitmap = page.render(scale=_PREVIEW_SCALE)
+                    try:
+                        image = bitmap.to_pil().convert("RGB")
+                        buf = io.BytesIO()
+                        image.save(buf, format="PNG")
+                        return Response(content=buf.getvalue(), media_type="image/png")
+                    finally:
+                        bitmap.close()
+                finally:
+                    page.close()
+            finally:
+                pdf.close()
+        except Exception:
+            logger.exception("PDF preview render failed for %s", path)
+            raise HTTPException(500, "Could not render a preview for this PDF.")
+
+    raise HTTPException(404, "No preview available for this file type.")
 
 
 @router.get("/outputs/{job_id}/files/{artifact}")
