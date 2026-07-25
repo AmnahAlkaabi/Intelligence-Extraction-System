@@ -165,7 +165,7 @@ export default function DashboardPage() {
               {hasResult && <PIIReportView report={job.result!.compliance_report} jobId={job.job_id} />}
             </div>
             <div style={{ display: tab === "graph" ? "block" : "none" }}>
-              {hasResult && <KnowledgeGraphView graph={job.result!.knowledge_graph} />}
+              {hasResult && <KnowledgeGraphView graph={job.result!.knowledge_graph} active={tab === "graph"} />}
             </div>
             <div style={{ display: tab === "usecases" ? "block" : "none" }}>
               {hasResult && <BusinessUseCasesView report={job.result!.bi_report} />}
