@@ -12,14 +12,19 @@ export function CompletionHero({ job }: { job: Job }) {
   const result = job.result;
   if (!result) return null;
 
-  const stats = [
-    { label: "Files processed", value: job.files.length },
+  const unprocessed = job.files.filter((f) => f.status !== "complete").length;
+
+  const stats: { label: string; value: string | number; danger?: boolean }[] = [
+    { label: "Files processed", value: job.files.length - unprocessed },
     { label: "Entities found", value: result.knowledge_graph.entities.length },
     { label: "Relations mapped", value: result.knowledge_graph.relations.length },
     { label: "PII findings", value: result.compliance_report.pii_inventory.length },
     { label: "BI tables proposed", value: result.bi_report.business_use_cases.length },
     { label: "Time to complete", value: elapsed(job) },
   ];
+  if (unprocessed > 0) {
+    stats.splice(1, 0, { label: "Unprocessed", value: unprocessed, danger: true });
+  }
 
   return (
     <div className="completion-hero">
@@ -37,11 +42,17 @@ export function CompletionHero({ job }: { job: Job }) {
         <div className="completion-hero-stats">
           {stats.map((s) => (
             <div className="completion-stat" key={s.label}>
-              <span className="completion-stat-value">{s.value}</span>
+              <span className={`completion-stat-value${s.danger ? " completion-stat-value-danger" : ""}`}>{s.value}</span>
               <span className="completion-stat-label">{s.label}</span>
             </div>
           ))}
         </div>
+        {unprocessed > 0 && (
+          <p className="completion-hero-warning">
+            {unprocessed} file{unprocessed === 1 ? "" : "s"} didn't finish processing:{" "}
+            {job.files.filter((f) => f.status !== "complete").map((f) => f.filename.split("/").pop()).join(", ")}
+          </p>
+        )}
       </div>
     </div>
   );
