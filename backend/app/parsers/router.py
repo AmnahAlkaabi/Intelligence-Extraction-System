@@ -15,6 +15,7 @@ from app.parsers.base import BaseParser
 from app.parsers.code_parser import CodeParser
 from app.parsers.csv_parser import CSVParser
 from app.parsers.database_parser import DatabaseParser
+from app.parsers.email_parser import EmailParser
 from app.parsers.excel_parser import ExcelParser
 from app.parsers.image_parser import ImageParser
 from app.parsers.json_parser import JSONParser
@@ -86,6 +87,8 @@ def _get_parser(category: FileCategory) -> BaseParser | None:
             _PARSERS[category] = OfficeParser()
         elif category == FileCategory.DATABASE:
             _PARSERS[category] = DatabaseParser()
+        elif category == FileCategory.EMAIL:
+            _PARSERS[category] = EmailParser()
         elif category == FileCategory.CODE:
             _PARSERS[category] = CodeParser()
         elif category == FileCategory.MEDIA:

@@ -35,10 +35,13 @@ Upload → File Router (MIME/ext classify)
          1-hop graph expansion → Kimi2 answer with citations)
 ```
 
-Currently wired end-to-end: **PDF, images (OCR), CSV/TSV, JSON/JSONL, Excel**.
-Other file types from the original architecture (email, office docs, code,
-archives, media, DB, web/XML) are classified and routed by the File Router
-already, but return a stub result — see [Extending file type support](#extending-file-type-support).
+Currently wired end-to-end: **PDF, images (OCR), CSV/TSV, JSON/JSONL, Excel
+(.xlsx/.xls), office docs (.docx/.pptx), code/log/text, archives (ZIP/TAR),
+SQLite databases, HTML/XML/GeoJSON, and email (.eml/.mbox)**. Media
+(audio/video) is metadata-only (no speech-to-text). Outlook's proprietary
+.msg/.pst formats and .ods spreadsheets are classified and routed but return
+an honest "not supported" result — see
+[Extending file type support](#extending-file-type-support).
 
 ## Prerequisites
 
