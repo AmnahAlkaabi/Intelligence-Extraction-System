@@ -10,14 +10,20 @@ with an explanatory message rather than shown stuck at its last progress
 forever.
 
 Large jobs (above settings.batch_threshold_files) run in importance-ranked
-batches (see agents/importance.py) instead of firing every file at once:
-files are triaged by likely intelligence value before any processing
-starts, then processed batch_size_files at a time, pausing after each
-batch but the last so the user can review a summary and decide whether to
-continue or stop with what's been analyzed so far. The batch plan itself
-(_BatchRun) is kept in memory only, like _domain_results/_tasks below --
-consistent with the existing rule that an in-flight job can't resume
-across a server restart anyway.
+batches instead of firing every file at once: agents/metadata_agent.py
+builds a factual metadata layer per file first (type/size/mtime/filename
+keyword hits), then agents/importance.py's decision agent scores that
+layer into a priority order. Files are then processed batch_size_files at
+a time, highest-ranked first, pausing after each batch but the last so
+the user can review a summary and decide whether to continue or stop with
+what's been analyzed so far. Each batch's entities/relations/chunks are
+merged into the job's Neo4j graph as soon as that batch finishes (see
+_run_batches) rather than accumulated in memory and ingested once at the
+very end -- ingest_job_graph is MERGE-based, so this is safe to do
+incrementally without re-sending earlier batches' data. The batch plan
+itself (_BatchRun) is kept in memory only, like _domain_results/_tasks
+below -- consistent with the existing rule that an in-flight job can't
+resume across a server restart anyway.
 """
 import asyncio
 import logging
@@ -27,6 +33,7 @@ from pathlib import Path
 
 from app.agents.domain_managers import process_file
 from app.agents.importance import RankedFile, make_batches, rank_files
+from app.agents.metadata_agent import build_metadata_layer
 from app.agents.synthesizer import synthesize
 from app.config import get_settings
 from app.graph.neo4j_client import get_store
@@ -212,12 +219,18 @@ class JobManager:
             warnings.append(f"{neo4j_detail} — affects: knowledge graph, chat")
         job.warnings = warnings
 
-        # Importance-ranked batching: below the threshold this produces
-        # exactly one batch holding every file in upload order (ranking's
-        # sort is stable), so small/typical jobs behave identically to
-        # before batching existed -- no reordering, no pause, no new UI.
+        # Importance-ranked batching: the Metadata Agent builds a factual
+        # layer per file first (type/size/mtime/filename keyword hits),
+        # then the decision agent (importance.rank_files) scores that
+        # layer -- two separate steps so the scoring weights can be
+        # retuned without touching how metadata is gathered, and vice
+        # versa. Below the threshold this produces exactly one batch
+        # holding every file in upload order (ranking's sort is stable),
+        # so small/typical jobs behave identically to before batching
+        # existed -- no reordering, no pause, no new UI.
         categories = {fp: classify(fp) for fp in file_paths}
-        ranked = rank_files(file_paths, categories)
+        metadata_layer = build_metadata_layer(file_paths, categories)
+        ranked = rank_files(metadata_layer)
         use_batching = len(file_paths) > settings.batch_threshold_files
         batches = make_batches(ranked, settings.batch_size_files) if use_batching else [ranked]
         job.total_batches = len(batches)
@@ -235,6 +248,14 @@ class JobManager:
 
         job.status = JobStatus.PARSING
         await self.touch(job)
+
+        if neo4j_ok:
+            try:
+                await store.ensure_schema()
+            except Exception:
+                logger.exception("Neo4j schema setup failed for job %s — graph ingest will be skipped.", job_id)
+                neo4j_ok = False
+                job.warnings.append("Neo4j schema setup failed — knowledge graph and chat will be unavailable.")
 
         self._batch_runs[job_id] = _BatchRun(
             batches=batches,
@@ -296,6 +317,27 @@ class JobManager:
             self._domain_results[job_id] = list(state.all_results)
             state.next_batch_index += 1
 
+            # Merge this batch's output into the job's graph immediately,
+            # rather than accumulating everything in memory and ingesting
+            # once at the very end. ingest_job_graph is MERGE-based on
+            # (job_id, name, type) for entities and (job_id, chunk_id) for
+            # chunks, so calling it once per batch with only *that batch's*
+            # new entities/relations/chunks correctly folds into whatever
+            # earlier batches already wrote -- an entity seen in both batch
+            # 1 and batch 2 ends up as one merged node either way, not two.
+            if state.neo4j_reachable:
+                try:
+                    store = get_store()
+                    batch_entities = [e for r in batch_results for e in r.entities]
+                    batch_relations = [rel for r in batch_results for rel in r.relations]
+                    batch_chunks = [c for r in batch_results for c in r.chunks]
+                    await store.ingest_job_graph(job_id, batch_entities, batch_relations, batch_chunks)
+                except Exception:
+                    logger.exception(
+                        "Graph merge failed for job %s batch %d — chat/GraphRAG may be incomplete.",
+                        job_id, batch_number,
+                    )
+
             if len(state.batches) > 1:
                 job.batch_summaries.append(_summarize_batch(batch_number, batch, batch_results))
 
@@ -320,21 +362,13 @@ class JobManager:
                     f.status = JobStatus.SKIPPED
             job.stopped_early = True
 
+        # Graph ingestion already happened incrementally, once per batch
+        # (see _run_batches), so there's nothing left to merge here -- this
+        # stage is now just a status transition kept for UI consistency
+        # with the existing PARSING -> EXTRACTING -> GRAPH_BUILD ->
+        # SYNTHESIZING -> COMPLETE progression.
         job.status = JobStatus.GRAPH_BUILD
         await self.touch(job)
-        store = get_store()
-        neo4j_reachable = state.neo4j_reachable if state else True
-        if neo4j_reachable:
-            try:
-                await store.ensure_schema()
-                all_entities = [e for r in results for e in r.entities]
-                all_relations = [rel for r in results for rel in r.relations]
-                all_chunks = [c for r in results for c in r.chunks]
-                await store.ingest_job_graph(job_id, all_entities, all_relations, all_chunks)
-            except Exception:
-                logger.exception("Graph ingest failed for job %s — chat/GraphRAG will be degraded.", job_id)
-        else:
-            logger.info("Skipping graph ingest for job %s — Neo4j was unreachable at preflight.", job_id)
 
         job.status = JobStatus.SYNTHESIZING
         await self.touch(job)
