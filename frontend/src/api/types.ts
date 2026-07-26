@@ -3,7 +3,11 @@ export type FileCategory =
   | "database" | "code" | "archive" | "media" | "web" | "unknown";
 
 export type JobStatusValue =
-  | "queued" | "parsing" | "extracting" | "graph_build" | "synthesizing" | "complete" | "failed";
+  | "queued" | "parsing" | "extracting" | "graph_build" | "synthesizing" | "complete" | "failed"
+  // Job-level only: paused after a batch, waiting for continue/stop.
+  | "awaiting_batch_confirm"
+  // FileProgress-level only: job was stopped early before this file's batch ran.
+  | "skipped";
 
 export interface FileProgress {
   filename: string;
@@ -19,6 +23,18 @@ export interface FileProgress {
   financial_facts_found: number;
   tables_found: number;
   chunks_found: number;
+  batch?: number | null;
+  importance_reason?: string | null;
+}
+
+export interface BatchSummary {
+  batch_number: number;
+  file_count: number;
+  top_files: string[];
+  entities_found: number;
+  relations_found: number;
+  pii_found: number;
+  financial_facts_found: number;
 }
 
 export interface BusinessIndex {
@@ -198,6 +214,10 @@ export interface Job {
   error?: string | null;
   warnings: string[];
   agent_activity: AgentActivity[];
+  total_batches: number;
+  current_batch: number;
+  batch_summaries: BatchSummary[];
+  stopped_early: boolean;
 }
 
 export interface ChatMessage {

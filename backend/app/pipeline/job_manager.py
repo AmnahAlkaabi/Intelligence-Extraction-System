@@ -8,21 +8,33 @@ A job caught mid-processing when the process restarts can't resume (no
 in-flight asyncio task survives a restart), so it's loaded back as FAILED
 with an explanatory message rather than shown stuck at its last progress
 forever.
+
+Large jobs (above settings.batch_threshold_files) run in importance-ranked
+batches (see agents/importance.py) instead of firing every file at once:
+files are triaged by likely intelligence value before any processing
+starts, then processed batch_size_files at a time, pausing after each
+batch but the last so the user can review a summary and decide whether to
+continue or stop with what's been analyzed so far. The batch plan itself
+(_BatchRun) is kept in memory only, like _domain_results/_tasks below --
+consistent with the existing rule that an in-flight job can't resume
+across a server restart anyway.
 """
 import asyncio
 import logging
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
 
 from app.agents.domain_managers import process_file
+from app.agents.importance import RankedFile, make_batches, rank_files
 from app.agents.synthesizer import synthesize
 from app.config import get_settings
 from app.graph.neo4j_client import get_store
 from app.llm.client import get_llm_client
-from app.models.schemas import DomainResult, FileProgress, Job, JobStatus
+from app.models.schemas import BatchSummary, DomainResult, FileProgress, Job, JobStatus
 from app.parsers.router import classify
 from app.pipeline.agent_tracker import finish_activity, start_activity
 from app.storage.file_store import (
-    delete_job_files,
     load_all_job_states,
     write_graph_json,
     write_job_state,
@@ -39,6 +51,24 @@ _ACTIVE_STATUSES = {
     JobStatus.QUEUED, JobStatus.PARSING, JobStatus.EXTRACTING,
     JobStatus.GRAPH_BUILD, JobStatus.SYNTHESIZING,
 }
+_TERMINAL_FILE_STATUSES = (JobStatus.COMPLETE, JobStatus.FAILED, JobStatus.SKIPPED)
+
+
+@dataclass
+class _BatchRun:
+    """State threaded across a job's batches -- built once by
+    _prepare_and_run, read/mutated by _run_batches on every batch
+    (including resumed ones after a continue_batch() call), and dropped
+    once _finalize_job runs. Kept out of the Job pydantic model itself
+    since none of this is meant to be persisted or shown directly (Job
+    exposes the user-facing subset via total_batches/current_batch/
+    batch_summaries instead)."""
+    batches: list[list[RankedFile]]
+    unreachable_backends: set[str]
+    neo4j_reachable: bool
+    semaphore: asyncio.Semaphore
+    all_results: list[DomainResult] = field(default_factory=list)
+    next_batch_index: int = 0
 
 
 class JobManager:
@@ -46,6 +76,7 @@ class JobManager:
         self._jobs: dict[str, Job] = {}
         self._domain_results: dict[str, list[DomainResult]] = {}
         self._tasks: dict[str, asyncio.Task] = {}
+        self._batch_runs: dict[str, _BatchRun] = {}
         # Each job's own semaphore only bounds concurrency *within* that
         # job -- with several jobs running at once (multiple users
         # uploading concurrently) their per-job semaphores don't coordinate
@@ -92,7 +123,9 @@ class JobManager:
         otherwise-sync manager). Returns False if the job doesn't exist;
         raises ValueError if it's still actively processing, since deleting
         out from under a running asyncio task would leave that task writing
-        state for a job the registry no longer knows about."""
+        state for a job the registry no longer knows about. A job paused
+        at AWAITING_BATCH_CONFIRM has no task running at that moment, so
+        it's safe to delete without waiting."""
         job = self._jobs.get(job_id)
         if job is None:
             return False
@@ -101,31 +134,61 @@ class JobManager:
         self._jobs.pop(job_id, None)
         self._domain_results.pop(job_id, None)
         self._tasks.pop(job_id, None)
+        self._batch_runs.pop(job_id, None)
         return True
 
     def start(self, job_id: str, file_paths: list[str]) -> None:
-        task = asyncio.create_task(self._run(job_id, file_paths))
+        task = asyncio.create_task(self._guarded(job_id, self._prepare_and_run(job_id, file_paths)))
         self._tasks[job_id] = task
 
-    async def _run(self, job_id: str, file_paths: list[str]) -> None:
+    def continue_batch(self, job_id: str) -> bool:
+        """Resumes a job paused at AWAITING_BATCH_CONFIRM at its next
+        batch. Returns False if the job doesn't exist; raises ValueError if
+        it isn't actually paused (e.g. already running, already complete,
+        or never entered batch mode)."""
+        job = self._jobs.get(job_id)
+        if job is None:
+            return False
+        if job.status != JobStatus.AWAITING_BATCH_CONFIRM:
+            raise ValueError(f"Job {job_id} is not awaiting batch confirmation (status={job.status.value}).")
+        task = asyncio.create_task(self._guarded(job_id, self._run_batches(job_id)))
+        self._tasks[job_id] = task
+        return True
+
+    def stop_batches(self, job_id: str) -> bool:
+        """Ends a paused job early: whatever batches have already been
+        processed are synthesized into the final report now, and every
+        file in a batch that never ran is marked SKIPPED rather than left
+        looking permanently stuck at QUEUED."""
+        job = self._jobs.get(job_id)
+        if job is None:
+            return False
+        if job.status != JobStatus.AWAITING_BATCH_CONFIRM:
+            raise ValueError(f"Job {job_id} is not awaiting batch confirmation (status={job.status.value}).")
+        task = asyncio.create_task(self._guarded(job_id, self._finalize_job(job_id, stopped_early=True)))
+        self._tasks[job_id] = task
+        return True
+
+    async def _guarded(self, job_id: str, coro) -> None:
         job = self._jobs[job_id]
         try:
-            await self._run_unguarded(job, job_id, file_paths)
+            await coro
         except Exception as exc:  # noqa: BLE001
             # Belt-and-suspenders: every stage below already has its own
             # try/except, but this catches anything upstream of/between them
             # (e.g. the preflight reachability check itself raising) so a
             # job can never silently stall forever with status left at
-            # QUEUED/PARSING and job.error unset -- asyncio.create_task in
-            # start() has nothing else watching for this task's exception.
+            # QUEUED/PARSING/AWAITING_BATCH_CONFIRM and job.error unset --
+            # asyncio.create_task has nothing else watching for this task's
+            # exception.
             logger.exception("Unhandled failure running job %s", job_id)
             job.status = JobStatus.FAILED
             job.error = str(exc)
             await self.touch(job)
 
-    async def _run_unguarded(self, job: Job, job_id: str, file_paths: list[str]) -> None:
+    async def _prepare_and_run(self, job_id: str, file_paths: list[str]) -> None:
+        job = self._jobs[job_id]
         settings = get_settings()
-        semaphore = asyncio.Semaphore(settings.max_parallel_files)
 
         # Preflight: check Qwen/Kimi2/Neo4j reachability up front (a few
         # seconds) instead of only discovering a dead service after several
@@ -148,41 +211,119 @@ class JobManager:
         if not neo4j_ok:
             warnings.append(f"{neo4j_detail} — affects: knowledge graph, chat")
         job.warnings = warnings
-        neo4j_reachable = neo4j_ok
+
+        # Importance-ranked batching: below the threshold this produces
+        # exactly one batch holding every file in upload order (ranking's
+        # sort is stable), so small/typical jobs behave identically to
+        # before batching existed -- no reordering, no pause, no new UI.
+        categories = {fp: classify(fp) for fp in file_paths}
+        ranked = rank_files(file_paths, categories)
+        use_batching = len(file_paths) > settings.batch_threshold_files
+        batches = make_batches(ranked, settings.batch_size_files) if use_batching else [ranked]
+        job.total_batches = len(batches)
+
+        if use_batching:
+            by_filename = {f.filename: f for f in job.files}
+            ordered_files: list[FileProgress] = []
+            for batch_idx, batch in enumerate(batches, start=1):
+                for r in batch:
+                    fp_entry = by_filename[r.path]
+                    fp_entry.batch = batch_idx
+                    fp_entry.importance_reason = r.reason
+                    ordered_files.append(fp_entry)
+            job.files = ordered_files
 
         job.status = JobStatus.PARSING
         await self.touch(job)
 
-        async def _process_one(fp: str) -> DomainResult:
-            async with semaphore, self._global_semaphore:
-                progress = next(f for f in job.files if f.filename == fp)
-                progress.status = JobStatus.EXTRACTING
-                await self.touch(job)
-                try:
-                    result = await process_file(fp, unreachable_backends=unreachable_backends, job=job)
-                    progress.status = JobStatus.COMPLETE
-                    progress.warnings = result.errors
-                    progress.detected_language = result.detected_language
-                    progress.translated = result.translated
-                    progress.entities_found = len(result.entities)
-                    progress.relations_found = len(result.relations)
-                    progress.pii_found = len(result.pii_findings)
-                    progress.financial_facts_found = len(result.financial_facts)
-                    progress.tables_found = len(result.tables)
-                    progress.chunks_found = len(result.chunks)
-                except Exception as exc:  # noqa: BLE001
-                    logger.exception("Processing failed for %s", fp)
-                    progress.status = JobStatus.FAILED
-                    progress.error = str(exc)
-                    result = DomainResult(domain="unknown", source_file=fp, errors=[str(exc)])
-                await self.touch(job)
-                return result
+        self._batch_runs[job_id] = _BatchRun(
+            batches=batches,
+            unreachable_backends=unreachable_backends,
+            neo4j_reachable=neo4j_ok,
+            semaphore=asyncio.Semaphore(settings.max_parallel_files),
+        )
+        await self._run_batches(job_id)
 
-        results = await asyncio.gather(*(_process_one(fp) for fp in file_paths))
+    async def _run_batches(self, job_id: str) -> None:
+        """Processes batches starting at state.next_batch_index, pausing
+        (returning without finalizing) after any batch but the last when
+        more than one batch exists. Safe to call again later via
+        continue_batch() -- it picks up exactly where it left off because
+        next_batch_index and all_results live on the shared _BatchRun, not
+        as local variables in a suspended coroutine."""
+        job = self._jobs[job_id]
+        state = self._batch_runs.get(job_id)
+        if state is None:
+            raise RuntimeError(f"No batch plan found for job {job_id}.")
+
+        job.status = JobStatus.EXTRACTING
+        await self.touch(job)
+
+        while state.next_batch_index < len(state.batches):
+            batch = state.batches[state.next_batch_index]
+            batch_number = state.next_batch_index + 1
+            job.current_batch = batch_number
+            await self.touch(job)
+
+            async def _process_one(fp: str) -> DomainResult:
+                async with state.semaphore, self._global_semaphore:
+                    progress = next(f for f in job.files if f.filename == fp)
+                    progress.status = JobStatus.EXTRACTING
+                    await self.touch(job)
+                    try:
+                        result = await process_file(fp, unreachable_backends=state.unreachable_backends, job=job)
+                        progress.status = JobStatus.COMPLETE
+                        progress.warnings = result.errors
+                        progress.detected_language = result.detected_language
+                        progress.translated = result.translated
+                        progress.entities_found = len(result.entities)
+                        progress.relations_found = len(result.relations)
+                        progress.pii_found = len(result.pii_findings)
+                        progress.financial_facts_found = len(result.financial_facts)
+                        progress.tables_found = len(result.tables)
+                        progress.chunks_found = len(result.chunks)
+                    except Exception as exc:  # noqa: BLE001
+                        logger.exception("Processing failed for %s", fp)
+                        progress.status = JobStatus.FAILED
+                        progress.error = str(exc)
+                        result = DomainResult(domain="unknown", source_file=fp, errors=[str(exc)])
+                    await self.touch(job)
+                    return result
+
+            batch_paths = [r.path for r in batch]
+            batch_results = await asyncio.gather(*(_process_one(fp) for fp in batch_paths))
+            state.all_results.extend(batch_results)
+            self._domain_results[job_id] = list(state.all_results)
+            state.next_batch_index += 1
+
+            if len(state.batches) > 1:
+                job.batch_summaries.append(_summarize_batch(batch_number, batch, batch_results))
+
+            is_last = state.next_batch_index >= len(state.batches)
+            if len(state.batches) > 1 and not is_last:
+                job.status = JobStatus.AWAITING_BATCH_CONFIRM
+                await self.touch(job)
+                return
+
+        await self._finalize_job(job_id, stopped_early=False)
+
+    async def _finalize_job(self, job_id: str, stopped_early: bool) -> None:
+        job = self._jobs[job_id]
+        state = self._batch_runs.get(job_id)
+        results = state.all_results if state else self._domain_results.get(job_id, [])
         self._domain_results[job_id] = results
+
+        if stopped_early:
+            processed = {r.source_file for r in results}
+            for f in job.files:
+                if f.filename not in processed and f.status == JobStatus.QUEUED:
+                    f.status = JobStatus.SKIPPED
+            job.stopped_early = True
 
         job.status = JobStatus.GRAPH_BUILD
         await self.touch(job)
+        store = get_store()
+        neo4j_reachable = state.neo4j_reachable if state else True
         if neo4j_reachable:
             try:
                 await store.ensure_schema()
@@ -199,6 +340,8 @@ class JobManager:
         await self.touch(job)
         synth_activity = start_activity(job, "BI Synthesizer", "(all files)")
         try:
+            llm_client = get_llm_client()
+            unreachable_backends = state.unreachable_backends if state else set()
             synthesis_backend = llm_client.backend_for_role("synthesis")
             output = await synthesize(results, skip_llm=synthesis_backend in unreachable_backends)
             job.result = output
@@ -220,10 +363,11 @@ class JobManager:
             job.error = str(exc)
             finish_activity(synth_activity, "failed")
         await self.touch(job)
+        self._batch_runs.pop(job_id, None)
 
     async def touch(self, job: Job) -> None:
         job.updated_at = datetime.now(timezone.utc)
-        done = sum(1 for f in job.files if f.status in (JobStatus.COMPLETE, JobStatus.FAILED))
+        done = sum(1 for f in job.files if f.status in _TERMINAL_FILE_STATUSES)
         job.progress_pct = round(100.0 * done / max(len(job.files), 1) * 0.9, 1)  # reserve 10% for synth
         # touch() fires on nearly every state change during processing
         # (once per file per stage); a completed job's state can be sizeable
@@ -232,6 +376,18 @@ class JobManager:
         # and with it, every other job's progress and every API request --
         # for the duration of the write.
         await asyncio.to_thread(write_job_state, job)
+
+
+def _summarize_batch(batch_number: int, batch: list[RankedFile], results: list[DomainResult]) -> BatchSummary:
+    return BatchSummary(
+        batch_number=batch_number,
+        file_count=len(batch),
+        top_files=[Path(r.path).name for r in batch[:5]],
+        entities_found=sum(len(r.entities) for r in results),
+        relations_found=sum(len(r.relations) for r in results),
+        pii_found=sum(len(r.pii_findings) for r in results),
+        financial_facts_found=sum(len(r.financial_facts) for r in results),
+    )
 
 
 _manager_singleton: JobManager | None = None

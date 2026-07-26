@@ -55,3 +55,32 @@ async def delete_job(job_id: str) -> None:
         await get_store().delete_job(job_id)
     except Exception:
         logger.exception("Neo4j cleanup failed for deleted job %s — graph nodes may be orphaned.", job_id)
+
+
+@router.post("/jobs/{job_id}/batches/continue", response_model=Job)
+async def continue_batch(job_id: str) -> Job:
+    """Resumes a large job paused at AWAITING_BATCH_CONFIRM (see
+    pipeline/job_manager.py) at its next importance-ranked batch."""
+    manager = get_job_manager()
+    try:
+        started = manager.continue_batch(job_id)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    if not started:
+        raise HTTPException(404, "Job not found.")
+    return manager.get_job(job_id)
+
+
+@router.post("/jobs/{job_id}/batches/stop", response_model=Job)
+async def stop_batches(job_id: str) -> Job:
+    """Ends a paused job early: synthesizes a report from whatever batches
+    already ran, and marks the rest of the files SKIPPED rather than
+    processing them."""
+    manager = get_job_manager()
+    try:
+        started = manager.stop_batches(job_id)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    if not started:
+        raise HTTPException(404, "Job not found.")
+    return manager.get_job(job_id)

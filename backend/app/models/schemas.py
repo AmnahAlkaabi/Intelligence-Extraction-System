@@ -44,6 +44,15 @@ class JobStatus(str, Enum):
     SYNTHESIZING = "synthesizing"
     COMPLETE = "complete"
     FAILED = "failed"
+    # Job-level only: a large job (see importance.py) processes in
+    # importance-ranked batches and pauses here after each one but the
+    # last, waiting for the user to continue or stop early.
+    AWAITING_BATCH_CONFIRM = "awaiting_batch_confirm"
+    # FileProgress-level only: the job was stopped early by the user before
+    # this file's batch ran, so it was never attempted -- distinct from
+    # QUEUED (which also means "not yet attempted") so the file list can
+    # show *why* it never ran instead of looking permanently stuck.
+    SKIPPED = "skipped"
 
 
 # ---------------------------------------------------------------- parsing --
@@ -344,6 +353,11 @@ class FileProgress(BaseModel):
     financial_facts_found: int = 0
     tables_found: int = 0
     chunks_found: int = 0
+    # Set once (at job start) by the importance-ranking pass (see
+    # importance.py) when a job is large enough to run in batches --
+    # 1-indexed processing order, None on jobs too small to batch.
+    batch: int | None = None
+    importance_reason: str | None = None
 
 
 class AgentActivity(BaseModel):
@@ -359,6 +373,19 @@ class AgentActivity(BaseModel):
     started_at: datetime = Field(default_factory=datetime.utcnow)
     finished_at: datetime | None = None
     duration_ms: int | None = None
+
+
+class BatchSummary(BaseModel):
+    """Deterministic (no LLM call) checkpoint summary shown to the user
+    after each batch, so they can decide whether to continue to the next
+    batch or stop early with what's been processed so far."""
+    batch_number: int
+    file_count: int
+    top_files: list[str] = []   # highest-ranked filenames in this batch, with why
+    entities_found: int = 0
+    relations_found: int = 0
+    pii_found: int = 0
+    financial_facts_found: int = 0
 
 
 class Job(BaseModel):
@@ -379,6 +406,18 @@ class Job(BaseModel):
     # with no explanation.
     warnings: list[str] = []
     agent_activity: list[AgentActivity] = []
+    # Batching (see importance.py + pipeline/job_manager.py): only used
+    # once file_count exceeds settings.batch_threshold_files. total_batches
+    # stays 1 for ordinary jobs, which never enter AWAITING_BATCH_CONFIRM.
+    total_batches: int = 1
+    current_batch: int = 0
+    batch_summaries: list[BatchSummary] = []
+    # True when the user stopped a batched job early via stop_batches()
+    # rather than letting every batch run -- kept distinct from `warnings`
+    # (which is specifically about degraded service connectivity) so the
+    # frontend can show an accurate, differently-worded notice instead of
+    # this appearing under "Service connectivity issues detected."
+    stopped_early: bool = False
 
 
 # -------------------------------------------------------------------- chat --

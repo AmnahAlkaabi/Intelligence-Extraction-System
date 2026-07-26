@@ -8,6 +8,8 @@ const LABELS: Record<JobStatusValue, string> = {
   synthesizing: "Synthesizing",
   complete: "Complete",
   failed: "Failed",
+  awaiting_batch_confirm: "Awaiting Confirmation",
+  skipped: "Skipped",
 };
 
 export function StatusBadge({ status }: { status: JobStatusValue }) {

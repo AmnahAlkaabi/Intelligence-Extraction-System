@@ -250,6 +250,13 @@ a { color: var(--accent); text-decoration: none; }
 .warning-banner ul { margin: 0; padding-left: 18px; color: var(--text); line-height: 1.6; }
 .warning-banner-note { color: var(--muted); font-size: 11.5px; margin: 8px 0 0; }
 
+.stopped-early-banner {
+  background: var(--bg3); border: 1px solid var(--line);
+  border-radius: 5px; padding: 12px 16px; margin-bottom: 16px; font-size: 13px;
+}
+.stopped-early-banner p { margin: 0; color: var(--text); line-height: 1.6; }
+.stopped-early-banner .warning-banner-title { color: var(--muted); }
+
 .job-list { display: flex; flex-direction: column; gap: 6px; }
 .job-row {
   display: grid; grid-template-columns: 120px 1fr auto 200px auto; gap: 12px; align-items: center;
@@ -277,6 +284,8 @@ a { color: var(--accent); text-decoration: none; }
 }
 .status-complete { background: rgba(85,189,136,0.12); color: var(--accent2); }
 .status-failed { background: rgba(226,104,92,0.12); color: var(--danger); }
+.status-awaiting_batch_confirm { background: rgba(226,163,82,0.15); color: var(--warn); }
+.status-skipped { background: var(--bg3); color: var(--muted); }
 
 .job-header-row { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
 .job-header-row .page-title { margin: 0; }
@@ -294,6 +303,25 @@ a { color: var(--accent); text-decoration: none; }
   color: var(--text); font-size: 22px; font-family: var(--font-display); font-weight: 700; min-width: 280px;
 }
 .job-title-input:focus { outline: none; }
+
+/* ============ BATCH CONTROL (large-job importance-ranked checkpoints) ============ */
+.batch-control {
+  background: var(--bg2); border: 1px solid var(--warn); border-radius: 6px;
+  padding: 16px 18px; margin-bottom: 14px; display: flex; flex-direction: column; gap: 10px;
+}
+.batch-control-head { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.batch-control-title { font-size: 15px; font-weight: 700; font-family: var(--font-display); color: var(--warn); }
+.batch-control-summary {
+  background: var(--bg3); border: 1px solid var(--line); border-radius: 5px; padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.batch-summary-row {
+  display: flex; flex-wrap: wrap; gap: 10px 16px; font-size: 12px; color: var(--text);
+}
+.batch-summary-row > span:first-child { color: var(--muted); font-weight: 600; }
+.batch-summary-total { border-top: 1px dashed var(--line); padding-top: 6px; }
+.batch-top-files { margin: 0; }
+.batch-control-actions { display: flex; gap: 10px; margin-top: 4px; }
 
 /* ============ COLLAPSIBLE SECTIONS (Job Status / Agent Activity) ============ */
 .section-panel { border: 1px solid var(--line); border-radius: 6px; margin-bottom: 14px; overflow: hidden; background: var(--bg2); }
@@ -336,6 +364,11 @@ a { color: var(--accent); text-decoration: none; }
 .translated-chip {
   flex: 0 0 auto; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;
   color: var(--accent); background: rgba(20,184,166,0.12); border-radius: 4px; padding: 2px 6px;
+}
+.batch-chip {
+  flex: 0 0 auto; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;
+  color: var(--muted); background: var(--bg3); border: 1px solid var(--line); border-radius: 4px; padding: 2px 6px;
+  cursor: help;
 }
 
 .agent-status-slow-tag {
@@ -419,6 +452,7 @@ a { color: var(--accent); text-decoration: none; }
 .progress-file-detail-empty { color: var(--muted); }
 .progress-file-detail-active { color: var(--accent); }
 .progress-file-detail-queued { color: var(--dim); }
+.progress-file-detail-skipped { color: var(--muted); font-style: italic; }
 
 /* ============ COMPLETION HERO ============ */
 .completion-hero {

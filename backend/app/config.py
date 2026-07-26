@@ -72,6 +72,15 @@ class Settings(BaseSettings):
     max_parallel_files_global: int = 8  # cap across ALL concurrently-running jobs, not just within one
     job_retry_limit: int = 2
 
+    # --- Importance-ranked batching (see agents/importance.py) ---
+    # Jobs at or below this file count process as a single batch, exactly
+    # like before batching existed -- no pause, no behavior change. Above
+    # it, files are ranked by likely intelligence value and processed
+    # batch_size_files at a time, pausing after each batch but the last for
+    # the user to review a summary and choose whether to continue.
+    batch_threshold_files: int = 30
+    batch_size_files: int = 15
+
     # --- API ---
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:3000"]
     api_prefix: str = "/api"

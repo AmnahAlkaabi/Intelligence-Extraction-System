@@ -55,6 +55,9 @@ function FileDetail({ job, f }: { job: Job; f: FileProgress }) {
   if (f.status === "queued") {
     return <span className="progress-file-detail progress-file-detail-queued">Queued</span>;
   }
+  if (f.status === "skipped") {
+    return <span className="progress-file-detail progress-file-detail-skipped">Not analyzed — processing stopped early</span>;
+  }
   return null;
 }
 
@@ -62,6 +65,7 @@ export function JobProgress({ job }: { job: Job }) {
   const groups = CATEGORY_ORDER
     .map((cat) => ({ cat, files: job.files.filter((f) => f.category === cat) }))
     .filter((g) => g.files.length > 0);
+  const skippedCount = job.files.filter((f) => f.status === "skipped").length;
 
   return (
     <div className="progress-panel">
@@ -74,6 +78,16 @@ export function JobProgress({ job }: { job: Job }) {
           <p className="warning-banner-note">
             Processing continues with reduced functionality — parsing and chunking still run,
             but steps that depend on the affected service are skipped rather than hanging.
+          </p>
+        </div>
+      )}
+      {job.stopped_early && (
+        <div className="stopped-early-banner">
+          <div className="warning-banner-title">⏹ Processing stopped early</div>
+          <p>
+            You stopped this job after batch {job.current_batch} of {job.total_batches}. The report below was
+            built from the files already analyzed; {skippedCount} file{skippedCount === 1 ? "" : "s"} in
+            later batches {skippedCount === 1 ? "was" : "were"} not processed.
           </p>
         </div>
       )}
@@ -103,6 +117,11 @@ export function JobProgress({ job }: { job: Job }) {
                         {f.filename.split("/").pop()}
                       </span>
                       <StatusBadge status={f.status} />
+                      {f.batch != null && (
+                        <span className="batch-chip" title={f.importance_reason ?? undefined}>
+                          batch {f.batch}
+                        </span>
+                      )}
                       {f.translated && (
                         <span className="translated-chip" title={`Translated from '${f.detected_language}' to English before extraction`}>
                           translated: {f.detected_language}

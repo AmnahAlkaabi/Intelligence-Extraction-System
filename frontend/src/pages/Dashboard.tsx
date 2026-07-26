@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { deleteJob, getJob } from "../api/client";
 import type { Job } from "../api/types";
 import { JobProgress } from "../components/JobProgress";
 import { AgentStatusPanel, activeAgentCount } from "../components/AgentStatusPanel";
+import { BatchControl } from "../components/BatchControl";
 import { CollapsibleSection } from "../components/CollapsibleSection";
 import { StatusBadge } from "../components/StatusBadge";
 import { JobTitle } from "../components/JobTitle";
@@ -37,37 +38,57 @@ export default function DashboardPage() {
   const [err, setErr] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const pollRef = useRef<number | null>(null);
+  const cancelledRef = useRef(false);
   const autoSwitchedRef = useRef(false);
   const navigate = useNavigate();
 
+  // Factored out (rather than inline in the mount effect) so continuing or
+  // stopping a paused batch job can restart the exact same polling cadence
+  // -- AWAITING_BATCH_CONFIRM isn't in ACTIVE_STATUSES, so the mount
+  // effect's own chain already stopped scheduling itself by the time the
+  // user acts on it.
+  const pollOnce = useCallback(async () => {
+    if (!jobId) return;
+    try {
+      const j = await getJob(jobId);
+      if (cancelledRef.current) return;
+      setJob(j);
+      if (j.status === "complete" && !autoSwitchedRef.current) {
+        autoSwitchedRef.current = true;
+        setTab("overview");
+      }
+      if (ACTIVE_STATUSES.has(j.status)) {
+        pollRef.current = window.setTimeout(pollOnce, 1500);
+      }
+    } catch (e) {
+      if (!cancelledRef.current) setErr(e instanceof Error ? e.message : "Failed to load job.");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobId]);
+
   useEffect(() => {
     if (!jobId) return;
-    let cancelled = false;
+    cancelledRef.current = false;
+    pollOnce();
+    return () => {
+      cancelledRef.current = true;
+      if (pollRef.current) clearTimeout(pollRef.current);
+    };
+  }, [jobId, pollOnce]);
 
-    async function poll() {
-      try {
-        const j = await getJob(jobId!);
-        if (cancelled) return;
-        setJob(j);
-        if (j.status === "complete" && !autoSwitchedRef.current) {
-          autoSwitchedRef.current = true;
-          setTab("overview");
-        }
-        if (ACTIVE_STATUSES.has(j.status)) {
-          pollRef.current = window.setTimeout(poll, 1500);
-        }
-      } catch (e) {
-        if (!cancelled) setErr(e instanceof Error ? e.message : "Failed to load job.");
-      }
+  function handleBatchUpdate(updated: Job) {
+    setJob(updated);
+    if (ACTIVE_STATUSES.has(updated.status)) {
+      if (pollRef.current) clearTimeout(pollRef.current);
+      pollRef.current = window.setTimeout(pollOnce, 1500);
     }
-    poll();
-    return () => { cancelled = true; if (pollRef.current) clearTimeout(pollRef.current); };
-  }, [jobId]);
+  }
 
   if (err) return <div className="page-narrow"><div className="error-banner">{err}</div></div>;
   if (!job) return <div className="page-narrow">Loading job…</div>;
 
   const isActive = ACTIVE_STATUSES.has(job.status);
+  const isPaused = job.status === "awaiting_batch_confirm";
   const chatAvailable = job.status === "complete" || job.status === "synthesizing" || job.status === "graph_build";
   const hasResult = !!job.result;
   const showOutputs = hasResult || chatAvailable;
@@ -105,7 +126,9 @@ export default function DashboardPage() {
         </button>
       </div>
 
-      <CollapsibleSection title="Job Status" defaultOpen={isActive}>
+      {isPaused && <BatchControl job={job} onUpdated={handleBatchUpdate} />}
+
+      <CollapsibleSection title="Job Status" defaultOpen={isActive || isPaused || job.stopped_early}>
         <JobProgress job={job} />
       </CollapsibleSection>
 
