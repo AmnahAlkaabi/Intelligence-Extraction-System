@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { KnowledgeGraphExport } from "../api/types";
+import type { KnowledgeGraphExport, Relation } from "../api/types";
 
 interface Node {
   id: string;
@@ -49,6 +49,21 @@ export function KnowledgeGraphView({ graph, active = true }: { graph: KnowledgeG
   const alphaRef = useRef(1);
   const runningRef = useRef(false);
 
+  // Search state. `manualSelectedId` lets clicking a result chip or a
+  // connected-node link in the description panel override which match is
+  // focused; it's reset to null on every keystroke so a fresh query goes
+  // back to auto-focusing its top-ranked match.
+  const [query, setQuery] = useState("");
+  const [manualSelectedId, setManualSelectedId] = useState<string | null>(null);
+  const trimmedQuery = query.trim().toLowerCase();
+
+  // Read inside the imperative canvas loop below (same reason hoveredNodeRef
+  // / hoveredEdgeRef are refs, not state: state read inside a long-lived
+  // requestAnimationFrame closure can go stale mid-animation).
+  const activeSelectionRef = useRef<string | null>(null);
+  const neighborIdsRef = useRef<Set<string>>(new Set());
+  const matchIdsRef = useRef<Set<string>>(new Set());
+
   // Only the graph tab needs live dims/animation -- while another tab is
   // showing, this component may still be mounted (Dashboard keeps every
   // panel alive to preserve chat state) but sits at display:none, where
@@ -74,6 +89,69 @@ export function KnowledgeGraphView({ graph, active = true }: { graph: KnowledgeG
   );
 
   const names = useMemo(() => Array.from(new Set(graph.entities.map((e) => e.name))), [graph.entities]);
+
+  // Contextual search: matches on the entity's own name/type first, but
+  // also on its known aliases (mentions) and on the evidence text backing
+  // any relationship it's part of -- so searching a phrase that only
+  // appears in *why* two entities are linked still surfaces both of them,
+  // not just entities whose literal name contains the query.
+  const matches = useMemo(() => {
+    const q = trimmedQuery;
+    if (!q) return [];
+    const scored = new Map<string, { score: number; reason: string }>();
+    const consider = (id: string, score: number, reason: string) => {
+      const existing = scored.get(id);
+      if (!existing || score > existing.score) scored.set(id, { score, reason });
+    };
+    for (const e of graph.entities) {
+      const nameLower = e.name.toLowerCase();
+      if (nameLower === q) consider(e.name, 4, "exact name match");
+      else if (nameLower.includes(q)) consider(e.name, 3, "name match");
+      else if (e.type.toLowerCase().includes(q)) consider(e.name, 2, `type: ${e.type}`);
+      else {
+        const hitMention = e.mentions.find((m) => m.toLowerCase().includes(q));
+        if (hitMention) consider(e.name, 2, `also referred to as "${hitMention}"`);
+      }
+    }
+    for (const r of graph.relations) {
+      if (r.evidence && r.evidence.toLowerCase().includes(q)) {
+        consider(r.source_entity, 1, `context: "${r.evidence}"`);
+        consider(r.target_entity, 1, `context: "${r.evidence}"`);
+      }
+    }
+    return Array.from(scored.entries())
+      .map(([id, v]) => ({ id, ...v }))
+      .sort((a, b) => b.score - a.score);
+  }, [trimmedQuery, graph.entities, graph.relations]);
+
+  const activeSelection = trimmedQuery ? (manualSelectedId ?? matches[0]?.id ?? null) : null;
+  const selectedEntity = useMemo(
+    () => (activeSelection ? graph.entities.find((e) => e.name === activeSelection) ?? null : null),
+    [activeSelection, graph.entities],
+  );
+  const connectedRelations: Relation[] = useMemo(
+    () =>
+      activeSelection
+        ? graph.relations.filter((r) => r.source_entity === activeSelection || r.target_entity === activeSelection)
+        : [],
+    [activeSelection, graph.relations],
+  );
+  const neighborIds = useMemo(() => {
+    const s = new Set<string>();
+    if (!activeSelection) return s;
+    for (const r of connectedRelations) {
+      s.add(r.source_entity === activeSelection ? r.target_entity : r.source_entity);
+    }
+    return s;
+  }, [activeSelection, connectedRelations]);
+
+  useEffect(() => {
+    activeSelectionRef.current = activeSelection;
+    neighborIdsRef.current = neighborIds;
+    matchIdsRef.current = new Set(matches.map((m) => m.id));
+    wake();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSelection, neighborIds, matches]);
 
   function wake() {
     if (runningRef.current || !active) return;
@@ -134,12 +212,24 @@ export function KnowledgeGraphView({ graph, active = true }: { graph: KnowledgeG
     ctx.clearRect(0, 0, dims.width, dims.height);
     const byId = new Map(nodes.map((n) => [n.id, n]));
 
+    const selected = activeSelectionRef.current;
+    const neighbors = neighborIdsRef.current;
+    const matched = matchIdsRef.current;
+
     for (const e of edges) {
       const a = byId.get(e.source), b = byId.get(e.target);
       if (!a || !b) continue;
       const isHovered = hoveredEdgeRef.current === e;
-      ctx.strokeStyle = isHovered ? "rgba(92,139,255,0.9)" : "rgba(140,164,189,0.25)";
-      ctx.lineWidth = isHovered ? 2 : 1;
+      const touchesSelected = selected !== null && (e.source === selected || e.target === selected);
+      const dim = selected !== null && !touchesSelected;
+      ctx.strokeStyle = isHovered
+        ? "rgba(92,139,255,0.9)"
+        : touchesSelected
+        ? "rgba(20,184,166,0.85)"
+        : dim
+        ? "rgba(140,164,189,0.08)"
+        : "rgba(140,164,189,0.25)";
+      ctx.lineWidth = isHovered || touchesSelected ? 2 : 1;
       ctx.beginPath();
       ctx.moveTo(a.x, a.y);
       ctx.lineTo(b.x, b.y);
@@ -148,15 +238,37 @@ export function KnowledgeGraphView({ graph, active = true }: { graph: KnowledgeG
 
     for (const n of nodes) {
       const isHovered = hoveredNodeRef.current === n;
+      const isSelected = selected !== null && n.id === selected;
+      const isNeighbor = neighbors.has(n.id);
+      const isMatch = matched.has(n.id);
+      const dim = selected !== null && !isSelected && !isNeighbor;
+
+      ctx.globalAlpha = dim ? 0.25 : 1;
       ctx.beginPath();
-      ctx.arc(n.x, n.y, isHovered ? n.r + 3 : n.r, 0, Math.PI * 2);
+      ctx.arc(n.x, n.y, isSelected ? n.r + 6 : isHovered ? n.r + 3 : n.r, 0, Math.PI * 2);
       ctx.fillStyle = colorFor(n.type);
       ctx.fill();
-      if (isHovered) {
+
+      if (isSelected) {
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = "#14b8a6";
+        ctx.stroke();
+      } else if (isNeighbor) {
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = "#f3ece1";
+        ctx.stroke();
+      } else if (isMatch) {
+        ctx.setLineDash([3, 2]);
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = "#14b8a6";
+        ctx.stroke();
+        ctx.setLineDash([]);
+      } else if (isHovered) {
         ctx.lineWidth = 2;
         ctx.strokeStyle = "#f3ece1";
         ctx.stroke();
       }
+      ctx.globalAlpha = 1;
     }
 
     if (settled) { runningRef.current = false; return; }
@@ -278,6 +390,39 @@ export function KnowledgeGraphView({ graph, active = true }: { graph: KnowledgeG
 
   return (
     <div ref={wrapRef} className="graph-wrap">
+      <div className="graph-search-row">
+        <input
+          className="graph-search-input"
+          value={query}
+          onChange={(e) => { setQuery(e.target.value); setManualSelectedId(null); }}
+          placeholder="Search entities, aliases, or relationship context…"
+        />
+        {query && (
+          <button
+            className="graph-search-clear"
+            onClick={() => { setQuery(""); setManualSelectedId(null); }}
+            aria-label="Clear search"
+          >
+            ✕
+          </button>
+        )}
+      </div>
+      {trimmedQuery && (
+        <div className="graph-search-results">
+          {matches.length === 0 && <span className="muted small">No matches for "{query.trim()}".</span>}
+          {matches.slice(0, 12).map((m) => (
+            <button
+              key={m.id}
+              className={`graph-search-chip${m.id === activeSelection ? " active" : ""}`}
+              title={m.reason}
+              onClick={() => setManualSelectedId(m.id)}
+            >
+              {m.id}
+            </button>
+          ))}
+          {matches.length > 12 && <span className="muted small">+{matches.length - 12} more</span>}
+        </div>
+      )}
       <div className="graph-legend">
         {Object.entries(TYPE_COLORS).map(([type, color]) => (
           <span key={type} className="legend-item">
@@ -300,9 +445,48 @@ export function KnowledgeGraphView({ graph, active = true }: { graph: KnowledgeG
         )}
         <div ref={tooltipRef} className="graph-tooltip" style={{ display: "none" }} />
       </div>
+      {activeSelection && selectedEntity && (
+        <div className="graph-detail-panel">
+          <div className="graph-detail-header">
+            <span className="legend-dot" style={{ background: colorFor(selectedEntity.type) }} />
+            <strong>{selectedEntity.name}</strong>
+            <span className="dtype-chip">{selectedEntity.type}</span>
+          </div>
+          <p className="muted small">
+            Confidence {(selectedEntity.confidence * 100).toFixed(0)}% · from{" "}
+            {selectedEntity.source_file.split("/").pop()}
+          </p>
+          {selectedEntity.mentions.length > 0 && (
+            <p className="graph-detail-mentions">Also referred to as: {selectedEntity.mentions.join(", ")}</p>
+          )}
+          <p className="graph-detail-subhead">
+            {connectedRelations.length} direct connection{connectedRelations.length === 1 ? "" : "s"}
+          </p>
+          {connectedRelations.length === 0 ? (
+            <p className="muted small">No connected entities.</p>
+          ) : (
+            <ul className="graph-detail-connections">
+              {connectedRelations.map((r) => {
+                const isOutgoing = r.source_entity === activeSelection;
+                const otherId = isOutgoing ? r.target_entity : r.source_entity;
+                return (
+                  <li key={r.relation_id}>
+                    <button className="graph-detail-neighbor" onClick={() => setManualSelectedId(otherId)}>
+                      {isOutgoing ? "→" : "←"} {otherId}
+                    </button>
+                    <span className="muted small"> {r.relation_type}</span>
+                    {r.evidence && <p className="graph-detail-evidence">"{r.evidence}"</p>}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      )}
       <p className="muted small">
         {graph.entities.length} entities · {graph.relations.length} relations. Node size = connection count.
-        Drag nodes, hover a node or a line to see details.
+        Drag nodes, hover a node or a line to see details, or search above to highlight a node and its
+        direct connections.
       </p>
     </div>
   );
