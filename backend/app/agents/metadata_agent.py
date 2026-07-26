@@ -21,19 +21,24 @@ from pathlib import Path
 
 from app.models.schemas import FileCategory
 
-# Filename keywords suggesting higher-value business content -- matched
+# Keywords suggesting higher-value business content -- matched
 # case-insensitively against the filename only, since that's all that's
 # known before parsing. Deliberately biased toward the categories this
 # system already targets (financial/PII/compliance intelligence). Owned
 # here (not importance.py) because *detecting* these hits is a metadata
 # fact about the file, independent of how much they should count for.
-_KEYWORDS = (
+# Exported (not module-private) because graph/query_router.py reuses the
+# exact same list to classify chat questions -- one canonical vocabulary
+# for "this text smells like business-critical content," used on both
+# the write side (which files to prioritize) and the read side (which
+# chunk categories a question probably wants).
+BUSINESS_KEYWORDS = (
     "contract", "agreement", "invoice", "financial", "finance", "statement",
     "confidential", "legal", "audit", "compliance", "payroll", "tax",
     "merger", "acquisition", "nda", "report", "budget", "salary", "ledger",
     "balance", "transaction", "settlement", "board", "executive",
 )
-_KEYWORD_RE = re.compile("|".join(re.escape(k) for k in _KEYWORDS), re.IGNORECASE)
+_KEYWORD_RE = re.compile("|".join(re.escape(k) for k in BUSINESS_KEYWORDS), re.IGNORECASE)
 
 
 @dataclass

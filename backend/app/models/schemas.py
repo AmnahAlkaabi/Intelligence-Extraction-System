@@ -175,6 +175,12 @@ class Chunk(BaseModel):
     text: str
     embedding: list[float] | None = None
     page: int | None = None
+    # Source file's category, carried onto both the Neo4j Chunk node and
+    # the in-memory fallback copy -- lets chat retrieval narrow its
+    # candidate pool to the categories a question's keywords suggest
+    # (see graph/query_router.py) instead of always ranking every chunk
+    # in the job regardless of format.
+    category: FileCategory = FileCategory.UNKNOWN
 
 
 class DomainResult(BaseModel):

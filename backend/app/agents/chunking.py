@@ -34,14 +34,14 @@ async def chunk_and_embed(doc: ParsedDocument) -> list[Chunk]:
         if not block.text.strip():
             continue
         for piece in _split_into_chunks(block.text, settings.chunk_size_tokens, settings.chunk_overlap_tokens):
-            raw_chunks.append(Chunk(source_file=doc.source_file, text=piece, page=block.page))
+            raw_chunks.append(Chunk(source_file=doc.source_file, text=piece, page=block.page, category=doc.category))
 
     for table in doc.tables:
         if table.rows:
             preview = ", ".join(table.headers) + "\n" + "\n".join(
                 " | ".join(row) for row in table.rows[:20]
             )
-            raw_chunks.append(Chunk(source_file=doc.source_file, text=preview, page=table.page))
+            raw_chunks.append(Chunk(source_file=doc.source_file, text=preview, page=table.page, category=doc.category))
 
     if not raw_chunks:
         return []

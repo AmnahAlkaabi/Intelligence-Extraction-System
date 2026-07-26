@@ -8,6 +8,14 @@ can cite specific text passages *and* reason over the structured graph
 (ownership chains, cross-document links) — this is what distinguishes it
 from plain vector-only RAG.
 
+Before the vector search runs, query_router.infer_categories() takes a
+cheap, deterministic pass over the question itself (keyword match, no LLM
+call) to guess which file categories it's probably about, and that guess
+narrows the search's candidate pool -- faster and less noisy than always
+ranking every chunk in the job regardless of format. It's a soft signal:
+a wrong or absent guess falls back to an unfiltered search rather than
+ever making an answer worse than not guessing at all.
+
 When Neo4j is unreachable (or returns nothing), retrieval falls back to
 local_vector_store's brute-force cosine search over the same Chunk
 embeddings the pipeline already computed for this job -- see
@@ -20,6 +28,7 @@ import logging
 from app.embeddings.bge import get_embedder
 from app.graph import local_vector_store
 from app.graph.neo4j_client import get_store
+from app.graph.query_router import infer_categories
 from app.llm.client import get_llm_client
 from app.models.schemas import ChatMessage, ChatResponse, Chunk, Citation
 
@@ -48,6 +57,14 @@ async def answer_question(
     store = get_store()
     query_vec = await embedder.embed_query(message)
 
+    # Deterministic, keyword-based guess at which file categories this
+    # question is probably about (see query_router.py) -- None means "no
+    # opinion," searched exactly like before this existed. A guess only
+    # ever narrows the candidate pool; if it comes back empty below, the
+    # search is retried unfiltered rather than trusting the guess over
+    # having an answer at all.
+    categories = infer_categories(message)
+
     # Fast preflight, same rationale as the chat-model check below: a dead
     # or unauthorized Neo4j should surface quickly rather than bubbling up
     # as an unhandled exception -> 500 from the route. It no longer bails
@@ -61,7 +78,13 @@ async def answer_question(
 
     if neo4j_reachable:
         try:
-            hits = await store.vector_search(job_id, query_vec, top_k=8)
+            hits = await store.vector_search(job_id, query_vec, top_k=8, categories=categories)
+            if not hits and categories:
+                # The category guess narrowed to zero results -- retry
+                # unfiltered rather than answering "nothing found" when
+                # the job may simply not have any chunks in that category
+                # (or the guess was just wrong).
+                hits = await store.vector_search(job_id, query_vec, top_k=8)
         except Exception:
             logger.exception("Vector search failed for job %s", job_id)
             hits = []
@@ -75,7 +98,7 @@ async def answer_question(
         logger.warning("Neo4j unreachable for job %s (%s) — trying local vector fallback.", job_id, neo4j_detail)
 
     if not hits and fallback_chunks:
-        hits = local_vector_store.search(fallback_chunks, query_vec, top_k=8)
+        hits = local_vector_store.search(fallback_chunks, query_vec, top_k=8, categories=categories)
         if hits:
             degraded = True
 

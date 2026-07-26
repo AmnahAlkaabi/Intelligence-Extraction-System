@@ -16,7 +16,7 @@ up a second real vector store just for a degraded-mode fallback. Like the
 job_manager state it reads from, it only lives in memory for the lifetime
 of the backend process that ran the job.
 """
-from app.models.schemas import Chunk
+from app.models.schemas import Chunk, FileCategory
 
 
 def _cosine(a: list[float], b: list[float]) -> float:
@@ -28,14 +28,29 @@ def _cosine(a: list[float], b: list[float]) -> float:
     return dot / (norm_a * norm_b)
 
 
-def search(chunks: list[Chunk], query_vector: list[float], top_k: int = 8) -> list[dict]:
+def search(
+    chunks: list[Chunk], query_vector: list[float], top_k: int = 8,
+    categories: list[FileCategory] | None = None,
+) -> list[dict]:
+    """categories: same optional pre-filter as Neo4jStore.vector_search --
+    None/empty searches every chunk. If a filter is given but matches
+    nothing in this job's chunks, it's dropped rather than returning zero
+    results, for the same reason: a category guess should narrow the
+    search when it helps, never make an already-degraded fallback path
+    even worse."""
+    candidates = chunks
+    if categories:
+        narrowed = [c for c in chunks if c.category in categories]
+        if narrowed:
+            candidates = narrowed
+
     scored = [
         {
             "chunk_id": c.chunk_id, "text": c.text,
             "source_file": c.source_file, "page": c.page,
             "score": _cosine(c.embedding, query_vector),
         }
-        for c in chunks if c.embedding
+        for c in candidates if c.embedding
     ]
     scored.sort(key=lambda h: h["score"], reverse=True)
     return scored[:top_k]

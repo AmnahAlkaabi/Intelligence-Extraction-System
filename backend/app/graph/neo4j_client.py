@@ -10,7 +10,7 @@ import logging
 from neo4j import AsyncDriver, AsyncGraphDatabase
 
 from app.config import get_settings
-from app.models.schemas import Chunk, Entity, Job, Relation
+from app.models.schemas import Chunk, Entity, FileCategory, Job, Relation
 
 logger = logging.getLogger(__name__)
 
@@ -116,13 +116,15 @@ class Neo4jStore:
                     UNWIND $chunks AS c
                     MERGE (ch:Chunk {chunk_id: c.chunk_id})
                     SET ch.job_id = $job_id, ch.source_file = c.source_file,
-                        ch.text = c.text, ch.page = c.page, ch.embedding = c.embedding
+                        ch.text = c.text, ch.page = c.page, ch.embedding = c.embedding,
+                        ch.category = c.category
                     """,
                     job_id=job_id,
                     chunks=[
                         {
                             "chunk_id": c.chunk_id, "source_file": c.source_file,
                             "text": c.text, "page": c.page, "embedding": c.embedding,
+                            "category": c.category.value,
                         }
                         for c in chunks
                     ],
@@ -140,7 +142,10 @@ class Neo4jStore:
                     job_id=job_id,
                 )
 
-    async def vector_search(self, job_id: str, query_vector: list[float], top_k: int = 8) -> list[dict]:
+    async def vector_search(
+        self, job_id: str, query_vector: list[float], top_k: int = 8,
+        categories: list[FileCategory] | None = None,
+    ) -> list[dict]:
         """Neo4j's native vector index ranks globally across every job
         sharing it, and the job_id filter only applies *after* that ranking
         -- so a plain `queryNodes(index, top_k, vector)` can return zero
@@ -149,21 +154,33 @@ class Neo4jStore:
         Over-fetch a much larger candidate set before filtering so this
         job's chunks have room to surface; not a hard guarantee at
         unbounded scale, but it removes the failure mode for the realistic
-        range of concurrently-indexed jobs this deployment expects."""
+        range of concurrently-indexed jobs this deployment expects.
+
+        categories: optional pre-filter from graph/query_router.py's
+        keyword-based guess at which file types a chat question is
+        probably about. Empty/None means no opinion -- search every
+        category, same as before this filter existed. Callers should
+        retry unfiltered if a category-filtered call comes back empty,
+        since a wrong or overly-narrow guess must never make retrieval
+        worse than not guessing at all.
+        """
         settings = self._settings
         candidate_k = min(max(top_k * 25, 200), 5000)
+        category_values = [c.value for c in categories] if categories else []
         async with self._driver.session(database=settings.neo4j_database) as session:
             result = await session.run(
                 f"""
                 CALL db.index.vector.queryNodes('{settings.vector_index_name}', $candidate_k, $vector)
                 YIELD node, score
                 WHERE node.job_id = $job_id
+                  AND (size($categories) = 0 OR node.category IN $categories)
                 RETURN node.chunk_id AS chunk_id, node.text AS text,
                        node.source_file AS source_file, node.page AS page, score
                 ORDER BY score DESC
                 LIMIT $top_k
                 """,
                 candidate_k=candidate_k, top_k=top_k, vector=query_vector, job_id=job_id,
+                categories=category_values,
             )
             return [record.data() async for record in result]
 
