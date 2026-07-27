@@ -79,11 +79,11 @@ RUN printf '%s\n' \
 # fetch this one file with curl instead, forced onto HTTP/1.1, and verify
 # its sha256 locally before installing -- torchvision (1.8 MB) has never
 # shown this problem, so it's left on the normal pip path below.
-RUN retry sh -c 'rm -f /tmp/torch.whl && curl -fSL --http1.1 --retry 3 --retry-all-errors \
-      -o /tmp/torch.whl "https://download-r2.pytorch.org/whl/cpu/torch-2.5.1%2Bcpu-cp311-cp311-linux_x86_64.whl" \
-      && echo "07d7c9e069123d5af08b0cf0013d74f680b2d8be7d9e2cf561a52c90c55d9409  /tmp/torch.whl" | sha256sum -c -' \
-    && pip install --no-cache-dir /tmp/torch.whl \
-    && rm /tmp/torch.whl
+RUN retry sh -c 'rm -f /tmp/torch-2.5.1+cpu-cp311-cp311-linux_x86_64.whl && curl -fSL --http1.1 --retry 3 --retry-all-errors \
+      -o /tmp/torch-2.5.1+cpu-cp311-cp311-linux_x86_64.whl "https://download-r2.pytorch.org/whl/cpu/torch-2.5.1%2Bcpu-cp311-cp311-linux_x86_64.whl" \
+      && echo "07d7c9e069123d5af08b0cf0013d74f680b2d8be7d9e2cf561a52c90c55d9409  /tmp/torch-2.5.1+cpu-cp311-cp311-linux_x86_64.whl" | sha256sum -c -' \
+    && pip install --no-cache-dir /tmp/torch-2.5.1+cpu-cp311-cp311-linux_x86_64.whl \
+    && rm /tmp/torch-2.5.1+cpu-cp311-cp311-linux_x86_64.whl
 RUN retry pip install --no-cache-dir --timeout 100 --retries 5 \
     torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cpu
 
