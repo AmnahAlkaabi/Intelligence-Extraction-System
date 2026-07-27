@@ -29,6 +29,32 @@ ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 
 WORKDIR /app
 
+# Corporate TLS-inspecting proxies (see the corporate-CA note above) don't
+# just fail closed -- they sometimes intermittently corrupt small binary
+# responses in transit, which pip catches as a hash mismatch against
+# requirements.txt's pinned sha256s. That's treated as fatal, not a network
+# error, so pip's own --retries flag never kicks in for it -- the build dies
+# outright and previously needed a full manual `docker compose up --build`
+# re-run per bad package. `retry` wraps any command in an outer retry loop
+# (6 attempts, linear backoff) so a single corrupted download or transient
+# network blip self-heals inside the build instead of failing the whole
+# thing. Used below for every pip install and every live model download.
+RUN printf '%s\n' \
+    '#!/bin/sh' \
+    'set -e' \
+    'attempt=1' \
+    'max=6' \
+    'until "$@"; do' \
+    '  if [ "$attempt" -ge "$max" ]; then' \
+    '    echo "retry: giving up after $max attempts: $*" >&2' \
+    '    exit 1' \
+    '  fi' \
+    '  echo "retry: attempt $attempt/$max failed for: $* -- retrying in $((attempt * 5))s" >&2' \
+    '  sleep $((attempt * 5))' \
+    '  attempt=$((attempt + 1))' \
+    'done' \
+    > /usr/local/bin/retry && chmod +x /usr/local/bin/retry
+
 # CPU-only torch + torchvision. The default PyPI wheels for linux/amd64 drag
 # in the *entire* NVIDIA CUDA stack (nvidia-cublas-cu12, nvidia-cudnn-cu12,
 # etc) -- several extra GB -- even though this app only runs on CPU
@@ -41,7 +67,7 @@ WORKDIR /app
 # wheel index avoids all of that: smaller download, smaller final image
 # (which matters doubly for air-gapped hosts where the image has to be
 # saved and transferred), and far less to fail downloading on a slow link.
-RUN pip install --no-cache-dir --timeout 100 --retries 5 \
+RUN retry pip install --no-cache-dir --timeout 100 --retries 5 \
     torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cpu
 
 # Installed as separate layers (one per requirements/*.txt group) rather
@@ -52,16 +78,16 @@ RUN pip install --no-cache-dir --timeout 100 --retries 5 \
 # group that hasn't completed yet instead of redownloading everything.
 COPY requirements.txt .
 COPY requirements/ ./requirements/
-RUN pip install --no-cache-dir --timeout 100 --retries 5 -r requirements/core.txt
-RUN pip install --no-cache-dir --timeout 100 --retries 5 -r requirements/llm.txt
-RUN pip install --no-cache-dir --timeout 100 --retries 5 -r requirements/embeddings.txt
-RUN pip install --no-cache-dir --timeout 100 --retries 5 -r requirements/graph.txt
-RUN pip install --no-cache-dir --timeout 100 --retries 5 -r requirements/pdf.txt
-RUN pip install --no-cache-dir --timeout 100 --retries 5 -r requirements/ocr.txt
-RUN pip install --no-cache-dir --timeout 100 --retries 5 -r requirements/office.txt
-RUN pip install --no-cache-dir --timeout 100 --retries 5 -r requirements/web.txt
-RUN pip install --no-cache-dir --timeout 100 --retries 5 -r requirements/data.txt
-RUN pip install --no-cache-dir --timeout 100 --retries 5 -r requirements/utils.txt
+RUN retry pip install --no-cache-dir --timeout 100 --retries 5 -r requirements/core.txt
+RUN retry pip install --no-cache-dir --timeout 100 --retries 5 -r requirements/llm.txt
+RUN retry pip install --no-cache-dir --timeout 100 --retries 5 -r requirements/embeddings.txt
+RUN retry pip install --no-cache-dir --timeout 100 --retries 5 -r requirements/graph.txt
+RUN retry pip install --no-cache-dir --timeout 100 --retries 5 -r requirements/pdf.txt
+RUN retry pip install --no-cache-dir --timeout 100 --retries 5 -r requirements/ocr.txt
+RUN retry pip install --no-cache-dir --timeout 100 --retries 5 -r requirements/office.txt
+RUN retry pip install --no-cache-dir --timeout 100 --retries 5 -r requirements/web.txt
+RUN retry pip install --no-cache-dir --timeout 100 --retries 5 -r requirements/data.txt
+RUN retry pip install --no-cache-dir --timeout 100 --retries 5 -r requirements/utils.txt
 
 # huggingface_hub defaults to its newer "Xet" storage backend for large
 # files, which downloads from cas-server.xethub.hf.co instead of
@@ -81,7 +107,7 @@ RUN pip uninstall -y hf_xet || true
 # never needs network access at runtime. Swap the model name below if you
 # change EMBEDDING_MODEL_NAME in .env — it must match at build time.
 ARG EMBEDDING_MODEL_NAME=BAAI/bge-large-en-v1.5
-RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('${EMBEDDING_MODEL_NAME}')"
+RUN retry python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('${EMBEDDING_MODEL_NAME}')"
 
 # Pre-fetch Docling's layout + table-structure model artifacts (a single HF
 # Hub repo, ds4sd/docling-models) into the image, mirroring the exact
@@ -110,7 +136,7 @@ RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTr
 # silently defer the failure to that first PDF upload. Let the build fail
 # here, loudly, on a connected machine where it's actually fixable (see
 # the corporate-CA note above).
-RUN python -c "\
+RUN retry python -c "\
 from docling.datamodel.base_models import InputFormat; \
 from docling.datamodel.pipeline_options import PdfPipelineOptions, RapidOcrOptions; \
 from docling.document_converter import DocumentConverter, PdfFormatOption; \
