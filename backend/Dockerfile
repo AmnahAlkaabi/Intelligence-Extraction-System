@@ -123,8 +123,32 @@ RUN pip uninstall -y hf_xet || true
 # Pre-download model weights into the image so the air-gapped container
 # never needs network access at runtime. Swap the model name below if you
 # change EMBEDDING_MODEL_NAME in .env — it must match at build time.
+#
+# On some corporate networks, Hugging Face's small metadata files
+# (config.json, tokenizer, etc) download fine but the large model.safetensors
+# gets redirected server-side to a separate CDN host (*.aws.cdn.hf.co,
+# their "Xet" storage backend) that the corporate TLS-inspecting proxy signs
+# with a certificate whose chain can't be resolved locally, independent of
+# the corporate-ca.crt fix above. If that happens, drop a manually-obtained
+# copy of model.safetensors at backend/models_cache/model.safetensors (see
+# README) -- every other file still comes from the network as normal, and
+# only this one large weight file is taken from the local copy instead.
+# --mount=type=bind makes that local file visible only for this one RUN
+# step, so it's never baked into an intermediate image layer of its own.
 ARG EMBEDDING_MODEL_NAME=BAAI/bge-large-en-v1.5
-RUN retry python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('${EMBEDDING_MODEL_NAME}')"
+RUN --mount=type=bind,source=models_cache,target=/tmp/vendored-models \
+    retry python -c "\
+import os, shutil; \
+from huggingface_hub import snapshot_download; \
+from sentence_transformers import SentenceTransformer; \
+model_id = '${EMBEDDING_MODEL_NAME}'; \
+vendored = '/tmp/vendored-models/model.safetensors'; \
+snapshot_dir = snapshot_download(model_id, ignore_patterns=['*.safetensors', '*.bin', '*.h5', '*.msgpack', '*.onnx']); \
+has_vendored = os.path.exists(vendored) and os.path.getsize(vendored) > 0; \
+shutil.copy(vendored, os.path.join(snapshot_dir, 'model.safetensors')) if has_vendored else None; \
+print('Using vendored model.safetensors from backend/models_cache/' if has_vendored else 'No vendored model.safetensors -- downloading normally.'); \
+SentenceTransformer(model_id); \
+print('Embedding model cached OK.')"
 
 # Pre-fetch Docling's layout + table-structure model artifacts (a single HF
 # Hub repo, ds4sd/docling-models) into the image, mirroring the exact

@@ -208,6 +208,33 @@ indefinitely won't converge. The durable fixes, in order of preference:
    [Building for an air-gapped environment](#building-for-an-air-gapped-environment)
    above; this is the same transfer workflow either way.
 
+### If only the embedding model's weights file fails (small HF files work fine)
+
+Hugging Face serves large files (like the BGE embedding model's
+`model.safetensors`, ~1.3 GB) from a separate CDN host
+(`*.aws.cdn.hf.co`, their "Xet" storage backend) rather than
+`huggingface.co` itself. On some corporate networks that CDN host gets a
+TLS-inspected certificate whose chain can't be resolved locally, even
+though `huggingface.co`'s own certificate (and everything else in this
+guide) works fine — trusting the corporate root CA per the section above
+doesn't help here because it's often a *different* certificate than the
+one signing the main domain.
+
+If you hit this, there's no need to keep fighting the certificate chain:
+download the file once through a channel that already works for you (a
+regular browser handles it fine), and vendor it into the build instead of
+letting the container fetch it live.
+
+1. Download in your browser:
+   `https://huggingface.co/BAAI/bge-large-en-v1.5/resolve/main/model.safetensors`
+2. Save it as `backend/models_cache/model.safetensors` (gitignored — this
+   file never gets committed).
+3. Rebuild normally: `docker compose up -d --build`. `backend/Dockerfile`
+   automatically detects the vendored file and uses it instead of
+   downloading — every other file (config, tokenizer, etc) still comes
+   from the network as usual. If you don't have this issue, leave the
+   folder empty; it's a no-op and the model downloads live as normal.
+
 ## Using it
 
 1. Open the frontend, drop in files (PDF, images, CSV, JSON, Excel — mix

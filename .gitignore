@@ -34,7 +34,8 @@ neo4j_logs/
 
 # Model caches (large, downloaded once and baked into image / volume instead)
 backend/.cache/
-backend/models_cache/
+backend/models_cache/*
+!backend/models_cache/.gitkeep
 frontend/tsconfig.tsbuildinfo
 
 # Corporate TLS-proxy root CA certs (private to your org, don't commit)
