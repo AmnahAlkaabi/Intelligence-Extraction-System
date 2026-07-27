@@ -17,11 +17,13 @@ from app.models.schemas import (
     DomainResult,
     Entity,
     FileStats,
+    Job,
     KnowledgeGraphExport,
     Relation,
     SourceTargetMapping,
     SynthesisOutput,
 )
+from app.pipeline.agent_tracker import finish_activity, start_activity
 
 logger = logging.getLogger(__name__)
 
@@ -248,10 +250,18 @@ def compute_file_breakdown(results: list[DomainResult]) -> list[FileStats]:
     ]
 
 
-async def synthesize(results: list[DomainResult], skip_llm: bool = False) -> SynthesisOutput:
+async def synthesize(results: list[DomainResult], skip_llm: bool = False, job: Job | None = None) -> SynthesisOutput:
     """skip_llm: set when the job's preflight check already found the
     synthesis backend unreachable -- skips straight to the fallback report
     instead of burning through several minutes of doomed retries first.
+
+    job: optional -- when passed, the Mapping Agent (BI table proposals),
+    Insight Agent (deterministic cross-document indices), and the LLM
+    synthesis call each report their own start/finish onto
+    job.agent_activity, so they show up as distinct steps in the live
+    agent status panel instead of being invisible inside one opaque "BI
+    Synthesizer" span. None (e.g. in isolated tests) simply skips
+    tracking, same convention as domain_managers.process_file.
     """
     client = get_llm_client()
 
@@ -262,14 +272,18 @@ async def synthesize(results: list[DomainResult], skip_llm: bool = False) -> Syn
     chunk_count = sum(len(r.chunks) for r in results)
 
     digest = _build_context_digest(results)
+    llm_activity = start_activity(job, "BI Synthesizer", "(all files)")
     if skip_llm:
         raw = {}
+        finish_activity(llm_activity, "skipped")
     else:
         try:
             raw = await client.complete_json("synthesis", SYNTHESIS_SYSTEM, digest, max_tokens=2048)
+            finish_activity(llm_activity, "completed")
         except Exception:
             logger.exception("Synthesis LLM call failed")
             raw = {}
+            finish_activity(llm_activity, "failed")
 
     fallback_summary = (
         f"Synthesis model unreachable — showing per-file findings only. "
@@ -278,8 +292,25 @@ async def synthesize(results: list[DomainResult], skip_llm: bool = False) -> Syn
         if skip_llm else
         "Synthesis could not be generated (LLM unavailable). See per-file summaries below."
     )
-    bi_tables = build_bi_tables(results)
+
+    mapping_activity = start_activity(job, "Mapping Agent", "(all files)")
+    try:
+        bi_tables = build_bi_tables(results)
+        finish_activity(mapping_activity, "completed")
+    except Exception:
+        logger.exception("Mapping Agent failed to build BI table proposals")
+        bi_tables = []
+        finish_activity(mapping_activity, "failed")
     source_target_mapping = SourceTargetMapping(tables=bi_tables)
+
+    insight_activity = start_activity(job, "Insight Agent", "(all files)")
+    try:
+        corpus_overview = compute_corpus_overview(results, all_entities, all_relations)
+        finish_activity(insight_activity, "completed")
+    except Exception:
+        logger.exception("Insight Agent failed to compute cross-document indices")
+        corpus_overview = []
+        finish_activity(insight_activity, "failed")
 
     bi_report = BIReport(
         executive_summary=raw.get("executive_summary") or fallback_summary,
@@ -287,7 +318,7 @@ async def synthesize(results: list[DomainResult], skip_llm: bool = False) -> Syn
         financial_highlights=raw.get("financial_highlights") or [],
         risks=raw.get("risks") or [],
         market_signals=raw.get("market_signals") or [],
-        corpus_overview=compute_corpus_overview(results, all_entities, all_relations),
+        corpus_overview=corpus_overview,
         file_breakdown=compute_file_breakdown(results),
         business_use_cases=bi_tables,
         data_quality=[r.quality for r in results if r.quality is not None],

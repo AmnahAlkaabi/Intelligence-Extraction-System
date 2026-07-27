@@ -36,7 +36,8 @@ from app.graph import local_vector_store
 from app.graph.neo4j_client import get_store
 from app.graph.query_router import infer_categories
 from app.llm.client import get_llm_client
-from app.models.schemas import ChatMessage, ChatResponse, Chunk, Citation
+from app.models.schemas import ChatMessage, ChatResponse, Chunk, Citation, Job
+from app.pipeline.agent_tracker import finish_activity, start_activity
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +58,30 @@ say so plainly — do not guess or use outside knowledge.
 
 
 async def answer_question(
+    job_id: str, message: str, history: list[ChatMessage], fallback_chunks: list[Chunk] | None = None,
+    job: Job | None = None,
+) -> ChatResponse:
+    """Reports its own "GraphRAG Chat Synthesizer" activity span (see
+    agent_tracker.py) so chat turns are visible in the same Agent Activity
+    panel as ingestion, alongside Mapping Agent / Insight Agent / BI
+    Synthesizer -- job=None (e.g. tests, or a job the caller didn't fetch)
+    makes this a no-op, same convention as everywhere else that reports
+    activity."""
+    activity = start_activity(job, "GraphRAG Chat Synthesizer", job_id)
+    try:
+        resp = await _answer_question_impl(job_id, message, history, fallback_chunks)
+    except Exception as exc:
+        logger.exception("answer_question crashed unexpectedly for job %s", job_id)
+        finish_activity(activity, "failed")
+        return ChatResponse(
+            answer=f"Chat failed unexpectedly: {exc}",
+            citations=[], uncertain=True,
+        )
+    finish_activity(activity, "failed" if resp.uncertain else "completed")
+    return resp
+
+
+async def _answer_question_impl(
     job_id: str, message: str, history: list[ChatMessage], fallback_chunks: list[Chunk] | None = None,
 ) -> ChatResponse:
     embedder = await get_embedder()

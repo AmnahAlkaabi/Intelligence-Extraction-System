@@ -20,4 +20,4 @@ async def chat(request: ChatRequest) -> ChatResponse:
     # a second round-trip: these chunks are already sitting in memory from
     # when this job was processed.
     fallback_chunks = [c for r in manager.get_domain_results(request.job_id) for c in r.chunks]
-    return await answer_question(request.job_id, request.message, request.history, fallback_chunks)
+    return await answer_question(request.job_id, request.message, request.history, fallback_chunks, job=job)

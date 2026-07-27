@@ -40,7 +40,6 @@ from app.graph.neo4j_client import get_store
 from app.llm.client import get_llm_client
 from app.models.schemas import BatchSummary, DomainResult, FileProgress, Job, JobStatus
 from app.parsers.router import classify
-from app.pipeline.agent_tracker import finish_activity, start_activity
 from app.storage.file_store import (
     load_all_job_states,
     write_graph_json,
@@ -372,14 +371,16 @@ class JobManager:
 
         job.status = JobStatus.SYNTHESIZING
         await self.touch(job)
-        synth_activity = start_activity(job, "BI Synthesizer", "(all files)")
+        # synthesize() reports its own sub-steps (BI Synthesizer LLM call,
+        # Mapping Agent, Insight Agent) onto job.agent_activity individually
+        # -- no wrapping activity here, since that would just be a second,
+        # confusingly-duplicate "BI Synthesizer" span around the same work.
         try:
             llm_client = get_llm_client()
             unreachable_backends = state.unreachable_backends if state else set()
             synthesis_backend = llm_client.backend_for_role("synthesis")
-            output = await synthesize(results, skip_llm=synthesis_backend in unreachable_backends)
+            output = await synthesize(results, skip_llm=synthesis_backend in unreachable_backends, job=job)
             job.result = output
-            finish_activity(synth_activity, "completed")
 
             write_json_report(job_id, output)
             write_markdown_report(job_id, output)
@@ -395,7 +396,6 @@ class JobManager:
             logger.exception("Synthesis failed for job %s", job_id)
             job.status = JobStatus.FAILED
             job.error = str(exc)
-            finish_activity(synth_activity, "failed")
         await self.touch(job)
         self._batch_runs.pop(job_id, None)
 
