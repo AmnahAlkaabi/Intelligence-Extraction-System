@@ -67,8 +67,25 @@ RUN printf '%s\n' \
 # wheel index avoids all of that: smaller download, smaller final image
 # (which matters doubly for air-gapped hosts where the image has to be
 # saved and transferred), and far less to fail downloading on a slow link.
+#
+# torch's wheel (174.7 MB) is by far the largest single download in this
+# build, and on some corporate networks it comes back with a different
+# wrong sha256 on every attempt -- not the same wrong hash each time, which
+# would mean a bad/tampered file, but a *different* one every time, which
+# means a TLS-inspecting proxy is corrupting the bytes differently on each
+# re-interception of this one large, long-lived transfer. HTTP/2 response
+# reassembly bugs in exactly this kind of proxy are a well-documented cause.
+# pip's own downloader gives no control over the HTTP version it speaks, so
+# fetch this one file with curl instead, forced onto HTTP/1.1, and verify
+# its sha256 locally before installing -- torchvision (1.8 MB) has never
+# shown this problem, so it's left on the normal pip path below.
+RUN retry sh -c 'rm -f /tmp/torch.whl && curl -fSL --http1.1 --retry 3 --retry-all-errors \
+      -o /tmp/torch.whl "https://download-r2.pytorch.org/whl/cpu/torch-2.5.1%2Bcpu-cp311-cp311-linux_x86_64.whl" \
+      && echo "07d7c9e069123d5af08b0cf0013d74f680b2d8be7d9e2cf561a52c90c55d9409  /tmp/torch.whl" | sha256sum -c -' \
+    && pip install --no-cache-dir /tmp/torch.whl \
+    && rm /tmp/torch.whl
 RUN retry pip install --no-cache-dir --timeout 100 --retries 5 \
-    torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cpu
+    torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cpu
 
 # Installed as separate layers (one per requirements/*.txt group) rather
 # than a single `-r requirements.txt` so that a mid-install failure -- e.g.
