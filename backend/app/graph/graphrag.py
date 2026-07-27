@@ -22,6 +22,12 @@ embeddings the pipeline already computed for this job -- see
 local_vector_store.py for why that data is available for free. That path
 loses the graph-facts expansion (no Neo4j, no relations to traverse) but
 still lets chat answer from the document text instead of failing outright.
+
+Model fallback: if the chat role's configured backend (normally Kimi2) is
+unreachable, the other backend (Qwen) is tried automatically before
+giving up -- an outage on one model no longer takes chat down entirely,
+it just answers from the other one. ChatResponse.fallback_model tells the
+caller which backend actually answered when this happened.
 """
 import logging
 
@@ -140,26 +146,46 @@ async def answer_question(
 
     client = get_llm_client()
     chat_backend = client.backend_for_role("chat")
+    other_backend = "kimi" if chat_backend == "qwen" else "qwen"
 
     # Fast preflight before the real (multi-retry, up-to-180s-per-attempt)
     # call -- a genuinely dead chat endpoint should fail in ~8s with a clear
     # message, not leave the user waiting minutes per message with no
-    # feedback while it silently retries.
+    # feedback while it silently retries. If the configured chat backend
+    # is down, automatically try the other backend before giving up --
+    # this is what turns a Kimi2 outage into "chat still works, just via
+    # Qwen" instead of "chat is down until someone edits .env and
+    # restarts the container."
+    effective_backend = chat_backend
+    fallback_model: str | None = None
     reachable, detail = await client.check_reachable(chat_backend, timeout_s=8.0)
     if not reachable:
-        return ChatResponse(
-            answer=f"The chat model ('{chat_backend}') is currently unreachable: {detail} "
-                   f"Verify the endpoint is up and reachable from the backend, then try again.",
-            citations=[], uncertain=True,
-        )
+        fallback_reachable, fallback_detail = await client.check_reachable(other_backend, timeout_s=8.0)
+        if fallback_reachable:
+            effective_backend = other_backend
+            fallback_model = other_backend
+            logger.warning(
+                "Chat backend '%s' unreachable (%s) -- falling back to '%s' for job %s.",
+                chat_backend, detail, other_backend, job_id,
+            )
+        else:
+            return ChatResponse(
+                answer=f"Both chat models are currently unreachable: '{chat_backend}' ({detail}) "
+                       f"and '{other_backend}' ({fallback_detail}). Verify at least one endpoint "
+                       f"is up and reachable from the backend, then try again.",
+                citations=[], uncertain=True,
+            )
 
     try:
-        resp = await client.complete("chat", CHAT_SYSTEM, user_prompt, temperature=0.2, max_tokens=1024)
+        resp = await client.complete(
+            "chat", CHAT_SYSTEM, user_prompt, temperature=0.2, max_tokens=1024,
+            backend_override=effective_backend,
+        )
         answer_text = resp.text.strip()
     except Exception as exc:
         logger.exception("Chat completion failed for job %s", job_id)
         return ChatResponse(
-            answer=f"The chat model ('{chat_backend}') failed to respond: {exc}",
+            answer=f"The chat model ('{effective_backend}') failed to respond: {exc}",
             citations=[], uncertain=True,
         )
 
@@ -169,4 +195,7 @@ async def answer_question(
     ]
     uncertain = any(p in answer_text.lower() for p in ["don't know", "not contain", "no information", "cannot find"])
 
-    return ChatResponse(answer=answer_text, citations=citations, uncertain=uncertain, degraded=degraded)
+    return ChatResponse(
+        answer=answer_text, citations=citations, uncertain=uncertain,
+        degraded=degraded, fallback_model=fallback_model,
+    )

@@ -705,6 +705,10 @@ a { color: var(--accent); text-decoration: none; }
   display: block; margin-bottom: 6px; font-size: 10px; font-family: var(--font-mono);
   text-transform: uppercase; letter-spacing: 0.4px; color: var(--kimi);
 }
+.fallback-flag {
+  display: block; margin-bottom: 6px; font-size: 10px; font-family: var(--font-mono);
+  text-transform: uppercase; letter-spacing: 0.4px; color: var(--warn);
+}
 .chat-citations { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; max-width: 80%; }
 .citation { font-size: 11px; color: var(--muted); background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 4px 8px; }
 .citation summary { cursor: pointer; }

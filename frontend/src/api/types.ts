@@ -237,4 +237,5 @@ export interface ChatResponse {
   citations: Citation[];
   uncertain: boolean;
   degraded: boolean;
+  fallback_model?: string | null;
 }

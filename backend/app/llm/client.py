@@ -103,8 +103,15 @@ class LLMClient:
         json_mode: bool = False,
         temperature: float = 0.1,
         max_tokens: int = 2048,
+        backend_override: str | None = None,
     ) -> LLMResponse:
-        backend = self.backend_for_role(role)
+        """backend_override: bypass the role -> backend mapping and force a
+        specific physical backend for this one call -- used by chat's
+        automatic failover (see graphrag.py) to answer from Qwen when the
+        chat role's configured backend (normally Kimi2) is unreachable,
+        without needing a config change + restart to recover from an
+        outage."""
+        backend = backend_override or self.backend_for_role(role)
         client = self._clients[backend]
         model = self._model_names[backend]
 
