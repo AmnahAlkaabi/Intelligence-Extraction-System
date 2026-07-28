@@ -1,4 +1,6 @@
-# Intelligence Extraction System
+# Data Loom
+
+*A multi-agent intelligence extraction system.*
 
 An air-gapped, hierarchical multi-agent document intelligence pipeline. Upload
 mixed-format files, get entities/PII/financial signals/relationships extracted

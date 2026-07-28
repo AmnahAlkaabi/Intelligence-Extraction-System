@@ -16,9 +16,9 @@ function Rail() {
           <span className="mark-glyph">
             <RobotIcon className="bot-icon" />
           </span>
-          <span className="mark-word">Data Analysis Agent</span>
+          <span className="mark-word">Data Loom</span>
         </Link>
-        <div className="mark-sub">Intelligence Extraction</div>
+        <div className="mark-sub">Multi-Agent Intelligence Extraction System</div>
       </div>
       <nav className="rail-nav">
         <Link to="/" className={`rail-link ${isUpload ? "is-active" : ""}`}>

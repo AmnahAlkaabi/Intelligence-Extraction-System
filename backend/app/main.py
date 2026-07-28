@@ -46,7 +46,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Intelligence Extraction System",
+    title="Data Loom",
     description="Air-gapped hierarchical multi-agent document intelligence pipeline "
                 "(Qwen + Kimi2 + Neo4j GraphRAG + BGE embeddings).",
     version="0.1.0",

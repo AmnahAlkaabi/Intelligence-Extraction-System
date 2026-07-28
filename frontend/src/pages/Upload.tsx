@@ -55,7 +55,7 @@ export default function UploadPage() {
 
       <h1 className="landing-title">New Analysis</h1>
       <p className="landing-sub">
-        Drop in contracts, invoices, spreadsheets, scans — anything. The Data Analysis Agent routes
+        Drop in contracts, invoices, spreadsheets, scans — anything. Data Loom routes
         each file to the right extraction agent, runs everything on your on-prem Qwen and Kimi2
         models, and hands back a briefing you can question directly.
       </p>
