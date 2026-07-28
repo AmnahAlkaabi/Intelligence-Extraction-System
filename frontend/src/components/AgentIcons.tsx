@@ -104,6 +104,18 @@ const ICONS: Record<string, { engine: Engine; path: ReactNode }> = {
     engine: "kimi",
     path: <><path d="M4 20V10M11 20V4M18 20v-7" /><path d="M2.5 20.5h19" /></>,
   },
+  "Mapping Agent": {
+    engine: "rules",
+    path: <><rect x="2.5" y="8" width="7" height="8" rx="1" /><rect x="14.5" y="8" width="7" height="8" rx="1" /><path d="M9.5 12h5M12 9.5l2.5 2.5-2.5 2.5" /></>,
+  },
+  "Insight Agent": {
+    engine: "rules",
+    path: <><path d="M9 18h6M10 21h4" /><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.4 1 1.1 1 1.9v.2h5v-.2c0-.8.4-1.5 1-1.9A6 6 0 0 0 12 3Z" /></>,
+  },
+  "GraphRAG Chat Synthesizer": {
+    engine: "kimi",
+    path: <><path d="M4 5h16v11H9l-4 4v-4H4Z" /><circle cx="9" cy="10" r="1" /><circle cx="15" cy="10" r="1" /><path d="M9 10h6" /></>,
+  },
 };
 
 const FALLBACK: { engine: Engine; path: ReactNode } = {

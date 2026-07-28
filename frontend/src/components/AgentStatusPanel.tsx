@@ -26,7 +26,7 @@ const LANES: { id: string; name: string; agents: string[] }[] = [
   {
     id: "L3",
     name: "Synthesis",
-    agents: ["BI Synthesizer"],
+    agents: ["BI Synthesizer", "Mapping Agent", "Insight Agent", "GraphRAG Chat Synthesizer"],
   },
 ];
 
