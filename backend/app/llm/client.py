@@ -73,16 +73,31 @@ class LLMClient:
         return [role for role, b in self._role_backend.items() if b == backend]
 
     async def check_reachable(self, backend: str, timeout_s: float = 8.0) -> tuple[bool, str | None]:
-        """Fast connectivity probe (GET /v1/models) — cheap, no generation.
+        """Fast connectivity probe -- a minimal chat completion (max_tokens=1),
+        not GET /v1/models. Some on-prem OpenAI-compatible servers (seen in
+        practice with Kimi2) implement /v1/chat/completions but not the
+        /v1/models listing endpoint, returning a clean 404 for it -- that
+        used to make this check report the backend as unreachable and skip
+        synthesis/chat even though completions worked fine. A tiny real
+        completion tests the actual capability every such server implements,
+        so it can't be fooled by an unrelated endpoint being absent.
 
         Used as a preflight so a dead endpoint is reported in seconds instead
         of discovered only after several minutes of doomed retries deep
         inside file processing.
         """
         client = self._clients[backend]
+        model = self._model_names[backend]
         base_url = self._settings.qwen_base_url if backend == "qwen" else self._settings.kimi_base_url
         try:
-            await asyncio.wait_for(client.models.list(), timeout=timeout_s)
+            await asyncio.wait_for(
+                client.chat.completions.create(
+                    model=model,
+                    messages=[{"role": "user", "content": "ping"}],
+                    max_tokens=1,
+                ),
+                timeout=timeout_s,
+            )
             return True, None
         except Exception as exc:  # noqa: BLE001 - any failure means "unreachable" for our purposes
             detail = f"Cannot reach {backend} model endpoint at {base_url} ({exc.__class__.__name__}: {exc})"
