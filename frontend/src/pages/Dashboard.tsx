@@ -200,7 +200,7 @@ export default function DashboardPage() {
               {hasResult && <DataDumpView job={job} />}
             </div>
             <div style={{ display: tab === "chat" ? "block" : "none" }}>
-              {chatAvailable && <ChatPanel jobId={job.job_id} />}
+              {chatAvailable && <ChatPanel jobId={job.job_id} onMessageSent={pollOnce} />}
             </div>
           </div>
         </section>

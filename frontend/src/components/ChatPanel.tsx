@@ -9,7 +9,7 @@ interface DisplayMessage extends ChatMessage {
   fallbackModel?: string | null;
 }
 
-export function ChatPanel({ jobId }: { jobId: string }) {
+export function ChatPanel({ jobId, onMessageSent }: { jobId: string; onMessageSent?: () => void }) {
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -36,6 +36,14 @@ export function ChatPanel({ jobId }: { jobId: string }) {
     } finally {
       setSending(false);
       setTimeout(() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" }), 50);
+      // The backend records this turn onto job.agent_activity (GraphRAG Chat
+      // Synthesizer) regardless of whether it succeeded -- but polling for
+      // job updates stops once the job reaches "complete" (see Dashboard's
+      // pollOnce), so without this the Agent Activity panel would never
+      // learn a chat turn happened at all. One-off refresh, not continuous
+      // polling -- pollOnce() only reschedules itself for jobs still
+      // actively processing.
+      onMessageSent?.();
     }
   };
 
