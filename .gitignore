@@ -36,6 +36,9 @@ neo4j_logs/
 backend/.cache/
 backend/models_cache/*
 !backend/models_cache/.gitkeep
+!backend/models_cache/docling/
+backend/models_cache/docling/*
+!backend/models_cache/docling/.gitkeep
 frontend/tsconfig.tsbuildinfo
 
 # Corporate TLS-proxy root CA certs (private to your org, don't commit)

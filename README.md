@@ -235,6 +235,19 @@ letting the container fetch it live.
    from the network as usual. If you don't have this issue, leave the
    folder empty; it's a no-op and the model downloads live as normal.
 
+The same thing can happen for Docling's PDF-parsing models
+(`ds4sd/docling-models`) right after — it has three large files that hit
+the same CDN. If that build step fails the same way, download each of
+these from your browser and save them at the matching path:
+
+| Download URL | Save as |
+|---|---|
+| `https://huggingface.co/ds4sd/docling-models/resolve/main/model_artifacts/layout/model.safetensors` | `backend/models_cache/docling/model_artifacts/layout/model.safetensors` |
+| `https://huggingface.co/ds4sd/docling-models/resolve/main/model_artifacts/tableformer/accurate/tableformer_accurate.safetensors` | `backend/models_cache/docling/model_artifacts/tableformer/accurate/tableformer_accurate.safetensors` |
+| `https://huggingface.co/ds4sd/docling-models/resolve/main/model_artifacts/tableformer/fast/tableformer_fast.safetensors` | `backend/models_cache/docling/model_artifacts/tableformer/fast/tableformer_fast.safetensors` |
+
+Then rebuild the same way. These are also gitignored and never committed.
+
 ## Using it
 
 1. Open the frontend, drop in files (PDF, images, CSV, JSON, Excel — mix

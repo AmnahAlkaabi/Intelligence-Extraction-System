@@ -177,6 +177,42 @@ print('Embedding model cached OK.')"
 # silently defer the failure to that first PDF upload. Let the build fail
 # here, loudly, on a connected machine where it's actually fixable (see
 # the corporate-CA note above).
+#
+# Same corporate-proxy CDN issue as the embedding model above can hit
+# ds4sd/docling-models' three largest files (layout + both tableformer
+# variants) independently -- same fix: an optional local vendored copy at
+# backend/models_cache/docling/<path-within-the-repo> is used in place of
+# the live download for just those files. The revision below is whatever
+# this docling version actually requests (visible in its own error
+# messages if a future version bumps it) -- it must match for vendored
+# files to land where docling itself reads from. Written to a real .py
+# file (not an inline python -c one-liner) since Dockerfile's backslash
+# line-continuation collapses everything onto one shell line, which can't
+# express a for-loop followed by more code afterward.
+RUN printf '%s\n' \
+    "import os, shutil" \
+    "from huggingface_hub import snapshot_download" \
+    "repo_id = 'ds4sd/docling-models'" \
+    "revision = '36bebf56681740529abd09f5473a93a69373fbf0'" \
+    "large_files = [" \
+    "    'model_artifacts/layout/model.safetensors'," \
+    "    'model_artifacts/tableformer/accurate/tableformer_accurate.safetensors'," \
+    "    'model_artifacts/tableformer/fast/tableformer_fast.safetensors'," \
+    "]" \
+    "vendor_dir = '/tmp/vendored-models/docling'" \
+    "snapshot_dir = snapshot_download(repo_id, revision=revision, ignore_patterns=large_files)" \
+    "for f in large_files:" \
+    "    src = os.path.join(vendor_dir, f)" \
+    "    if os.path.exists(src) and os.path.getsize(src) > 0:" \
+    "        dst = os.path.join(snapshot_dir, f)" \
+    "        os.makedirs(os.path.dirname(dst), exist_ok=True)" \
+    "        shutil.copy(src, dst)" \
+    "        print('Using vendored ' + f)" \
+    "    else:" \
+    "        print('No vendored copy for ' + f + ' -- will attempt live download.')" \
+    > /tmp/vendor_docling_models.py
+RUN --mount=type=bind,source=models_cache/docling,target=/tmp/vendored-models/docling \
+    retry python /tmp/vendor_docling_models.py
 RUN retry python -c "\
 from docling.datamodel.base_models import InputFormat; \
 from docling.datamodel.pipeline_options import PdfPipelineOptions, RapidOcrOptions; \
