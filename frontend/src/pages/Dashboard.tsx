@@ -19,14 +19,14 @@ import { ChatPanel } from "../components/ChatPanel";
 
 type Tab = "overview" | "pii" | "graph" | "usecases" | "mapping" | "data" | "chat";
 
-const TABS: { id: Tab; label: string }[] = [
-  { id: "overview", label: "📋 High Level Analysis" },
-  { id: "pii", label: "🛡️ PII/Masking Report" },
-  { id: "graph", label: "🕸️ Knowledge Graph" },
-  { id: "usecases", label: "💡 Business Use Cases" },
-  { id: "mapping", label: "🔀 Source→Target Mapping" },
-  { id: "data", label: "📦 Data Dump" },
-  { id: "chat", label: "💬 Chat Q&A" },
+const TABS: { id: Tab; icon: string; label: string; desc: string }[] = [
+  { id: "overview", icon: "📋", label: "High Level Analysis", desc: "Executive summary & corpus overview" },
+  { id: "pii", icon: "🛡️", label: "PII / Masking Report", desc: "Severity-ranked PII inventory" },
+  { id: "graph", icon: "🕸️", label: "Knowledge Graph", desc: "Entities & relations, explorable" },
+  { id: "usecases", icon: "💡", label: "Business Use Cases", desc: "Proposed BI tables" },
+  { id: "mapping", icon: "🔀", label: "Source → Target", desc: "Mapping sheet per BI table" },
+  { id: "data", icon: "📦", label: "Data Dump", desc: "Raw extracted records by type" },
+  { id: "chat", icon: "💬", label: "Chat Q&A", desc: "Ask questions, grounded in the graph" },
 ];
 
 const ACTIVE_STATUSES = new Set(["queued", "parsing", "extracting", "graph_build", "synthesizing"]);
@@ -165,17 +165,24 @@ export default function DashboardPage() {
               </span>
             )}
           </div>
-          <div className="tab-bar">
-            {TABS.map((t) => (
-              <button
-                key={t.id}
-                className={`tab-btn ${tab === t.id ? "tab-btn-active" : ""}`}
-                onClick={() => setTab(t.id)}
-                disabled={t.id === "chat" ? !chatAvailable : !hasResult}
-              >
-                {t.label}
-              </button>
-            ))}
+          <div className="tile-grid">
+            {TABS.map((t) => {
+              const disabled = t.id === "chat" ? !chatAvailable : !hasResult;
+              const ready = t.id === "chat" ? chatAvailable : hasResult;
+              return (
+                <button
+                  key={t.id}
+                  className={`tile ${tab === t.id ? "tile-active" : ""} ${!ready ? "tile-pending" : ""} ${disabled ? "tile-disabled" : ""}`}
+                  onClick={() => setTab(t.id)}
+                  disabled={disabled}
+                >
+                  <span className="tile-stat" />
+                  <span className="tile-ic">{t.icon}</span>
+                  <span className="tile-t">{t.label}</span>
+                  <span className="tile-d">{t.desc}</span>
+                </button>
+              );
+            })}
           </div>
           {/* Every panel stays mounted and is only hidden via CSS, so switching
               tabs never unmounts ChatPanel (which would wipe its conversation)
