@@ -10,6 +10,7 @@ stream exactly as the diagram specifies (lateral "raw text stream" /
 "schema + tabular data" comms), just expressed as sequential awaits
 instead of separate message-passing actors.
 """
+import asyncio
 import logging
 
 from app.agents.chunking import chunk_and_embed
@@ -20,8 +21,33 @@ from app.llm.client import get_llm_client
 from app.models.schemas import DomainResult, FileCategory, Job
 from app.parsers.router import classify, parse_file
 from app.pipeline.agent_tracker import finish_activity, start_activity
+from app.storage import structured_store
 
 logger = logging.getLogger(__name__)
+
+# Which categories carry real tabular data worth mirroring into the
+# structured-query SQLite store (see storage/structured_store.py) -- not
+# every category has TableBlocks, and the ones that don't (PDF, email,
+# etc) never populate doc.tables anyway, so this is just an early filter
+# rather than a hard requirement.
+_STRUCTURED_CATEGORIES = {FileCategory.CSV, FileCategory.EXCEL, FileCategory.DATABASE}
+
+# One lock per job serializes structured-store writes for that job only
+# -- files within a job parse concurrently (MAX_PARALLEL_FILES), and two
+# concurrent writers deciding on the same de-duplicated table name for
+# the same job's structured.db before either commits would otherwise
+# race. Other files' parsing/chunking/extraction steps are unaffected;
+# only this one quick step queues up. Never cleaned up per-job (a Lock
+# object is a few dozen bytes -- not worth the bookkeeping to pop it).
+_structured_write_locks: dict[str, asyncio.Lock] = {}
+
+
+def _structured_lock(job_id: str) -> asyncio.Lock:
+    lock = _structured_write_locks.get(job_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _structured_write_locks[job_id] = lock
+    return lock
 
 # Functional agents that only make sense on text-bearing categories.
 _TEXT_CATEGORIES = {
@@ -86,6 +112,24 @@ async def process_file(
     except Exception:
         finish_activity(activity, "failed")
         raise
+
+    # Best-effort mirror of this file's tables into the job's structured
+    # SQLite store, so chat's text-to-SQL branch (graph/structured_query.py)
+    # can run real queries against real typed data instead of only the
+    # 20-row text preview that reaches the vector index. job is None in
+    # isolated tests/callers that don't have a job_id to key the store by
+    # -- skip rather than write to a store nothing will ever read back.
+    if job is not None and doc.category in _STRUCTURED_CATEGORIES and doc.tables:
+        try:
+            async with _structured_lock(job.job_id):
+                await asyncio.to_thread(
+                    structured_store.write_tables, job.job_id, file_path, doc.tables, doc.category
+                )
+        except Exception:
+            logger.exception("Structured table ingestion failed for %s", file_path)
+            doc.warnings.append(
+                "Structured query indexing failed for this file -- chat SQL answers may be incomplete."
+            )
 
     activity = start_activity(job, "Translator", file_path)
     try:

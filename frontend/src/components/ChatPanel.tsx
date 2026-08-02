@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import type { ChatMessage, Citation } from "../api/types";
+import type { ChatMessage, Citation, StructuredQueryResult } from "../api/types";
 import { sendChatMessage } from "../api/client";
 
 interface DisplayMessage extends ChatMessage {
@@ -7,6 +7,9 @@ interface DisplayMessage extends ChatMessage {
   uncertain?: boolean;
   degraded?: boolean;
   fallbackModel?: string | null;
+  queryMode?: "graphrag" | "structured";
+  sqlUsed?: string | null;
+  structuredResult?: StructuredQueryResult | null;
 }
 
 export function ChatPanel({ jobId, onMessageSent }: { jobId: string; onMessageSent?: () => void }) {
@@ -26,7 +29,11 @@ export function ChatPanel({ jobId, onMessageSent }: { jobId: string; onMessageSe
       const resp = await sendChatMessage(jobId, text, history);
       setMessages((prev) => [
         ...prev,
-        { role: "assistant", content: resp.answer, citations: resp.citations, uncertain: resp.uncertain, degraded: resp.degraded, fallbackModel: resp.fallback_model },
+        {
+          role: "assistant", content: resp.answer, citations: resp.citations, uncertain: resp.uncertain,
+          degraded: resp.degraded, fallbackModel: resp.fallback_model,
+          queryMode: resp.query_mode, sqlUsed: resp.sql_used, structuredResult: resp.structured_result,
+        },
       ]);
     } catch (e) {
       setMessages((prev) => [
@@ -59,6 +66,11 @@ export function ChatPanel({ jobId, onMessageSent }: { jobId: string; onMessageSe
         {messages.map((m, i) => (
           <div key={i} className={`chat-msg chat-msg-${m.role}`}>
             <div className="chat-msg-bubble">
+              {m.queryMode === "structured" && (
+                <span className="structured-flag" title="Answered by generating and running real SQL against this job's structured files (CSV/Excel/Database), instead of semantic search.">
+                  🧮 structured query
+                </span>
+              )}
               {m.degraded && (
                 <span className="degraded-flag" title="Neo4j was unreachable — answered from local text search only, without knowledge-graph reasoning.">
                   ⚡ text search only (graph unavailable)
@@ -75,6 +87,31 @@ export function ChatPanel({ jobId, onMessageSent }: { jobId: string; onMessageSe
               {m.content}
               {m.uncertain && <span className="uncertain-flag">⚠ low confidence</span>}
             </div>
+            {m.queryMode === "structured" && m.sqlUsed && (
+              <div className="structured-query-block">
+                <details className="structured-sql">
+                  <summary>View generated SQL</summary>
+                  <pre>{m.sqlUsed}</pre>
+                </details>
+                {m.structuredResult && m.structuredResult.headers.length > 0 && (
+                  <div className="structured-result-wrap">
+                    <table className="data-table">
+                      <thead>
+                        <tr>{m.structuredResult.headers.map((h, hi) => <th key={hi}>{h}</th>)}</tr>
+                      </thead>
+                      <tbody>
+                        {m.structuredResult.rows.map((row, ri) => (
+                          <tr key={ri}>{row.map((v, vi) => <td key={vi}>{v === "" ? "—" : v}</td>)}</tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                {m.structuredResult?.truncated && (
+                  <div className="structured-result-note">Showing first {m.structuredResult.row_count} rows only.</div>
+                )}
+              </div>
+            )}
             {m.citations && m.citations.length > 0 && (
               <div className="chat-citations">
                 {m.citations.map((c, ci) => (

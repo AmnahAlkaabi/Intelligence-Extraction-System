@@ -232,10 +232,20 @@ export interface Citation {
   score?: number | null;
 }
 
+export interface StructuredQueryResult {
+  headers: string[];
+  rows: string[][];
+  row_count: number;
+  truncated: boolean;
+}
+
 export interface ChatResponse {
   answer: string;
   citations: Citation[];
   uncertain: boolean;
   degraded: boolean;
   fallback_model?: string | null;
+  query_mode?: "graphrag" | "structured";
+  sql_used?: string | null;
+  structured_result?: StructuredQueryResult | null;
 }

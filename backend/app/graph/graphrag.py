@@ -28,11 +28,20 @@ unreachable, the other backend (Qwen) is tried automatically before
 giving up -- an outage on one model no longer takes chat down entirely,
 it just answers from the other one. ChatResponse.fallback_model tells the
 caller which backend actually answered when this happened.
+
+Before any of that, a question that looks quantitative (see
+structured_query.looks_quantitative) and whose job has structured files
+(CSV/Excel/Database) gets one attempt at a different strategy entirely:
+generate and run real SQL against those files' actual typed data (see
+structured_query.py), instead of embedding-similarity search over a
+20-row text preview. That branch fails closed -- no structured tables, an
+LLM/execution failure, or an unsafe/invalid generated query all fall
+straight through to the GraphRAG path below unchanged.
 """
 import logging
 
 from app.embeddings.bge import get_embedder
-from app.graph import local_vector_store
+from app.graph import local_vector_store, structured_query
 from app.graph.neo4j_client import get_store
 from app.graph.query_router import infer_categories
 from app.llm.client import get_llm_client
@@ -84,6 +93,15 @@ async def answer_question(
 async def _answer_question_impl(
     job_id: str, message: str, history: list[ChatMessage], fallback_chunks: list[Chunk] | None = None,
 ) -> ChatResponse:
+    if structured_query.looks_quantitative(message):
+        try:
+            structured_resp = await structured_query.answer_structured_question(job_id, message)
+        except Exception:
+            logger.exception("Structured query branch crashed for job %s -- falling back to GraphRAG.", job_id)
+            structured_resp = None
+        if structured_resp is not None:
+            return structured_resp
+
     embedder = await get_embedder()
     store = get_store()
     query_vec = await embedder.embed_query(message)

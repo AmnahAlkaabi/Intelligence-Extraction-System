@@ -446,6 +446,15 @@ class ChatRequest(BaseModel):
     history: list[ChatMessage] = []
 
 
+class StructuredQueryResult(BaseModel):
+    """Result of running the LLM-generated SQL from graph/structured_query.py
+    against a job's structured-file SQLite store -- see ChatResponse.sql_used."""
+    headers: list[str] = []
+    rows: list[list[str]] = []
+    row_count: int = 0
+    truncated: bool = False
+
+
 class ChatResponse(BaseModel):
     answer: str
     citations: list[Citation] = []
@@ -459,3 +468,10 @@ class ChatResponse(BaseModel):
     # Kept distinct from `degraded` (that's about retrieval quality, this
     # is about which model generated the answer).
     fallback_model: str | None = None
+    # "structured" when this answer came from running real SQL against the
+    # job's structured-file store (see graph/structured_query.py) instead
+    # of GraphRAG vector search -- "graphrag" (the default) means the
+    # normal retrieval path answered as usual.
+    query_mode: str = "graphrag"
+    sql_used: str | None = None
+    structured_result: StructuredQueryResult | None = None
