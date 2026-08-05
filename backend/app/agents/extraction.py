@@ -67,27 +67,48 @@ def _dedup_entities(entities: list[Entity]) -> list[Entity]:
     return list(merged.values())
 
 
-async def run_pii(text: str, source_file: str) -> list[PIIFinding]:
+async def run_pii(text: str, source_file: str, entities: list[Entity] | None = None) -> list[PIIFinding]:
+    """entities: this file's already-extracted entities (NER runs before PII
+    in domain_managers.py), passed the same way run_relations already
+    receives them -- lets the model attribute a finding to the specific
+    person it describes (PIIFinding.subject_entity) instead of every
+    finding being a disconnected fact with no owner."""
     client = get_llm_client()
     segments = _segment_text(text)
     if not segments:
         return []
 
+    person_names = sorted({e.name for e in (entities or []) if e.type == "PERSON"})
+
     async def _one(seg: str) -> list[PIIFinding]:
+        prompt = f"Known entities: {person_names}\n\nText:\n{seg}" if person_names else seg
         try:
-            data = await client.complete_json("extraction", PII_SYSTEM, seg)
+            data = await client.complete_json("extraction", PII_SYSTEM, prompt)
         except Exception:
             logger.exception("PII extraction failed for %s", source_file)
             return []
         out = []
         for item in data.get("findings", []):
             try:
+                # Only trust subject_entity if it's actually one of the
+                # names we gave the model -- a hallucinated or malformed
+                # name would otherwise become a dangling reference nothing
+                # in the graph resolves to (see neo4j_client.ingest_job_graph,
+                # which MATCHes on exact name and silently no-ops rather
+                # than erroring on a miss, but a clean None here is better
+                # than a misleading not-quite-right attribution surviving
+                # into the report).
+                raw_subject = item.get("subject_entity")
+                subject = next(
+                    (n for n in person_names if n.lower() == str(raw_subject).strip().lower()), None
+                ) if raw_subject else None
                 out.append(PIIFinding(
                     category=item.get("category", "OTHER_PII"),
                     value_redacted=item.get("value_redacted", "***"),
                     severity=item.get("severity", "low"),
                     source_file=source_file,
                     location=item.get("location"),
+                    subject_entity=subject,
                 ))
             except (KeyError, TypeError):
                 continue

@@ -76,6 +76,24 @@ _SPECIALIST_NAMES = {
 }
 
 
+def _apply_single_subject_fallback(result: DomainResult) -> None:
+    """If this file's NER pass found exactly one PERSON entity, any PII
+    finding the model didn't already attribute to a subject almost
+    certainly belongs to that one person -- the passport / ID card /
+    single-employee-form case: every field describes the same subject even
+    when the model's per-segment attribution missed one. Deliberately does
+    nothing when there are zero or multiple PERSON entities -- guessing
+    which of several people a fact belongs to is worse than leaving
+    subject_entity unset."""
+    people = [e for e in result.entities if e.type == "PERSON"]
+    if len(people) != 1:
+        return
+    subject = people[0].name
+    for finding in result.pii_findings:
+        if not finding.subject_entity:
+            finding.subject_entity = subject
+
+
 def _assess_quality_safe(doc, result: DomainResult, file_path: str):
     """assess_quality() is pure/deterministic but not infallible (e.g. a
     malformed TableBlock) -- the two early-return branches below call it
@@ -203,7 +221,8 @@ async def process_file(
 
     activity = start_activity(job, "PII Extractor", file_path)
     try:
-        result.pii_findings = await run_pii(text, file_path)
+        result.pii_findings = await run_pii(text, file_path, result.entities)
+        _apply_single_subject_fallback(result)
         finish_activity(activity, "completed")
     except Exception:
         logger.exception("PII detection failed for %s", file_path)

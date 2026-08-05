@@ -330,7 +330,10 @@ class JobManager:
                     batch_entities = [e for r in batch_results for e in r.entities]
                     batch_relations = [rel for r in batch_results for rel in r.relations]
                     batch_chunks = [c for r in batch_results for c in r.chunks]
-                    await store.ingest_job_graph(job_id, batch_entities, batch_relations, batch_chunks)
+                    batch_pii_findings = [f for r in batch_results for f in r.pii_findings]
+                    await store.ingest_job_graph(
+                        job_id, batch_entities, batch_relations, batch_chunks, batch_pii_findings
+                    )
                 except Exception:
                     logger.exception(
                         "Graph merge failed for job %s batch %d — chat/GraphRAG may be incomplete.",

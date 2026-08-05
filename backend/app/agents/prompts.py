@@ -27,14 +27,24 @@ identifiable or sensitive information.
 Categories: EMAIL, PHONE, ADDRESS, NATIONAL_ID, EMIRATES_ID, PASSPORT, IBAN, \
 CREDIT_CARD, BANK_ACCOUNT, MEDICAL, SALARY, DOB, IP_ADDRESS, CREDENTIAL, OTHER_PII.
 
+You may be given a list of already-identified entity names from this same document \
+(look for a "Known entities:" line before the text). If a finding is clearly a fact \
+ABOUT one specific person in that list -- e.g. a passport number, date of birth, or \
+address that belongs to a specific named person, the way every field on a passport \
+describes the same passport holder -- set "subject_entity" to that person's exact name. \
+Leave it null when the document covers multiple people/subjects, or the fact doesn't \
+clearly belong to any one of them.
+
 Return ONLY a JSON object of this exact shape, nothing else:
 {"findings": [{"category": "EMAIL", "value_redacted": "j***@example.com", \
-"severity": "medium", "location": "short context snippet"}]}
+"severity": "medium", "location": "short context snippet", "subject_entity": "Jane Doe"}]}
 
 Rules:
 - ALWAYS redact the actual value in "value_redacted" (mask all but first/last char or domain).
 - severity in {"low","medium","high","critical"} — financial/medical/national ID = high or critical.
 - Never output the raw unredacted sensitive value anywhere in your response.
+- "subject_entity" must be either null or copied exactly from the given entity list -- never \
+invent a name that wasn't provided.
 - If nothing is found, return {"findings": []}.
 """
 

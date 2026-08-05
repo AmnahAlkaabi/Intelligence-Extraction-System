@@ -10,7 +10,7 @@ import logging
 from neo4j import AsyncDriver, AsyncGraphDatabase
 
 from app.config import get_settings
-from app.models.schemas import Chunk, Entity, FileCategory, Job, Relation
+from app.models.schemas import Chunk, Entity, FileCategory, Job, PIIFinding, Relation
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +49,10 @@ class Neo4jStore:
                 "CREATE CONSTRAINT chunk_id IF NOT EXISTS "
                 "FOR (c:Chunk) REQUIRE c.chunk_id IS UNIQUE"
             )
+            await session.run(
+                "CREATE CONSTRAINT pii_finding_id IF NOT EXISTS "
+                "FOR (p:PIIFinding) REQUIRE p.finding_id IS UNIQUE"
+            )
             try:
                 await session.run(
                     f"""
@@ -72,6 +76,7 @@ class Neo4jStore:
         entities: list[Entity],
         relations: list[Relation],
         chunks: list[Chunk],
+        pii_findings: list[PIIFinding] | None = None,
     ) -> None:
         settings = self._settings
         async with self._driver.session(database=settings.neo4j_database) as session:
@@ -109,6 +114,42 @@ class Neo4jStore:
                         for r in relations
                     ],
                 )
+
+            if pii_findings:
+                await session.run(
+                    """
+                    UNWIND $findings AS f
+                    MERGE (p:PIIFinding {finding_id: f.finding_id})
+                    SET p.job_id = $job_id, p.category = f.category, p.value_redacted = f.value_redacted,
+                        p.severity = f.severity, p.source_file = f.source_file, p.location = f.location
+                    """,
+                    job_id=job_id,
+                    findings=[
+                        f.model_dump(include={
+                            "finding_id", "category", "value_redacted", "severity", "source_file", "location",
+                        })
+                        for f in pii_findings
+                    ],
+                )
+
+                # Only findings the extraction step (or its single-subject
+                # fallback -- see domain_managers.py) attributed to a
+                # specific person become graph edges. Matched against
+                # PERSON-typed entities specifically, not by name alone --
+                # a same-named ORG/LOCATION entity should never pick up
+                # someone else's PII by accident.
+                attributed = [f for f in pii_findings if f.subject_entity]
+                if attributed:
+                    await session.run(
+                        """
+                        UNWIND $findings AS f
+                        MATCH (e:Entity {job_id: $job_id, name: f.subject_entity, type: 'PERSON'})
+                        MATCH (p:PIIFinding {finding_id: f.finding_id})
+                        MERGE (e)-[:HAS_PII]->(p)
+                        """,
+                        job_id=job_id,
+                        findings=[{"finding_id": f.finding_id, "subject_entity": f.subject_entity} for f in attributed],
+                    )
 
             if chunks:
                 await session.run(

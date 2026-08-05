@@ -166,6 +166,15 @@ class PIIFinding(BaseModel):
     severity: str               # low | medium | high | critical
     source_file: str
     location: str | None = None
+    # Name of the PERSON Entity (from this file's NER pass) this finding
+    # describes -- e.g. a passport number's subject_entity is the person
+    # named on that passport, so a document's scattered PII findings can be
+    # recognized as facts about the same subject rather than disconnected
+    # items. Matched by name, same convention Relation.source_entity/
+    # target_entity already use. None means no clear single-subject
+    # attribution was made (multi-subject document, or genuinely
+    # ambiguous) -- never guessed wrong rather than always populated.
+    subject_entity: str | None = None
 
 
 class FinancialFact(BaseModel):
