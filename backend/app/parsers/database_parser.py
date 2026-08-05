@@ -16,6 +16,8 @@ from app.parsers.base import BaseParser
 logger = logging.getLogger(__name__)
 
 MAX_ROWS_PER_TABLE = 500
+# See csv_parser.MAX_STRUCTURED_ROWS -- same rationale, per table here.
+MAX_STRUCTURED_ROWS = 200_000
 
 
 class DatabaseParser(BaseParser):
@@ -65,6 +67,25 @@ class DatabaseParser(BaseParser):
                             sheet=table, headers=columns, rows=rows,
                             caption=f"{table} (showing up to {MAX_ROWS_PER_TABLE} of {row_count} rows)",
                         ))
+
+                        # Populated for every table unconditionally, same
+                        # reasoning as excel_parser.py -- the structured
+                        # store consumes doc.full_tables for the whole
+                        # database file at once, so a partial list would
+                        # silently drop every other table from chat's SQL
+                        # store entirely.
+                        cur.execute(f'SELECT * FROM "{table}" LIMIT {MAX_STRUCTURED_ROWS}')
+                        full_rows = [[str(v) if v is not None else "" for v in row] for row in cur.fetchall()]
+                        doc.full_tables.append(TableBlock(
+                            sheet=table, headers=columns, rows=full_rows,
+                            caption=f"{table} ({len(full_rows)} of {row_count} rows)",
+                        ))
+                        if row_count > MAX_STRUCTURED_ROWS:
+                            doc.warnings.append(
+                                f"Structured-query store only indexed the first {MAX_STRUCTURED_ROWS} of "
+                                f"{row_count} rows in table '{table}' -- aggregate SQL answers over this "
+                                f"table may be incomplete."
+                            )
                     except sqlite3.DatabaseError as exc:
                         logger.warning("Failed to read table '%s' in %s: %s", table, file_path, exc)
                         doc.warnings.append(f"Table '{table}' could not be read and was skipped: {exc}")

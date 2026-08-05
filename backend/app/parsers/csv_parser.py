@@ -11,6 +11,12 @@ from app.parsers.base import BaseParser
 logger = logging.getLogger(__name__)
 
 MAX_PREVIEW_ROWS = 500
+# Ceiling for the *full* (uncapped) copy that feeds the structured-query
+# SQL store (see storage/structured_store.py) -- much larger than the
+# on-screen preview, but still bounded so an accidentally huge upload
+# can't blow up memory. Business CSVs this big are rare; when it happens,
+# a warning below says so rather than silently dropping the tail.
+MAX_STRUCTURED_ROWS = 200_000
 
 
 class CSVParser(BaseParser):
@@ -50,6 +56,18 @@ class CSVParser(BaseParser):
                 rows=preview.values.tolist(),
                 caption="Preview" if len(df) > MAX_PREVIEW_ROWS else "Full data",
             ))
+            if len(df) > MAX_PREVIEW_ROWS:
+                full = df.head(MAX_STRUCTURED_ROWS).fillna("").astype(str)
+                doc.full_tables.append(TableBlock(
+                    headers=list(full.columns),
+                    rows=full.values.tolist(),
+                    caption=f"Full data ({len(full)} of {len(df)} rows)",
+                ))
+                if len(df) > MAX_STRUCTURED_ROWS:
+                    doc.warnings.append(
+                        f"Structured-query store only indexed the first {MAX_STRUCTURED_ROWS} of "
+                        f"{len(df)} rows -- aggregate SQL answers over this file may be incomplete."
+                    )
             doc.metadata = {"row_count": len(df), "column_count": len(df.columns), "parser": "pandas"}
         except Exception as exc:  # noqa: BLE001
             logger.exception("CSV parse failed on %s", file_path)

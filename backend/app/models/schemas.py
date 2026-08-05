@@ -81,6 +81,15 @@ class ParsedDocument(BaseModel):
     category: FileCategory
     text_blocks: list[TextBlock] = []
     tables: list[TableBlock] = []
+    # Only populated by the CSV/Excel/Database parsers: the same tables as
+    # `tables`, but without the 500-row-per-table cap that keeps `tables`
+    # small enough to render in the Data Dump tab / export to CSV. Feeds
+    # storage/structured_store.py so chat's structured-query SQL branch
+    # (graph/structured_query.py) sees every row of a large file, not just
+    # the on-screen preview. Empty means "identical to `tables`" (the file
+    # was under the preview cap to begin with) -- callers should use
+    # `full_tables or tables`, never assume this list is present.
+    full_tables: list[TableBlock] = []
     metadata: dict = {}
     warnings: list[str] = []
     # Set by the Translator agent (L1.5 preprocessing, runs on Qwen) when

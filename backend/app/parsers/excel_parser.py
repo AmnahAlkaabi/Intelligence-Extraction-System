@@ -10,6 +10,8 @@ from app.parsers.base import BaseParser
 logger = logging.getLogger(__name__)
 
 MAX_PREVIEW_ROWS = 500
+# See csv_parser.MAX_STRUCTURED_ROWS -- same rationale, per sheet here.
+MAX_STRUCTURED_ROWS = 200_000
 
 
 class ExcelParser(BaseParser):
@@ -55,6 +57,25 @@ class ExcelParser(BaseParser):
                     rows=preview.values.tolist(),
                     caption=sheet_name,
                 ))
+                # Populated for every sheet unconditionally (not just ones
+                # past MAX_PREVIEW_ROWS): the structured store consumes
+                # `full_tables` for the whole workbook at once (see
+                # domain_managers.py), so a partial list -- only the
+                # sheets that happened to be oversized -- would silently
+                # drop every other sheet from chat's SQL store entirely.
+                full = df.head(MAX_STRUCTURED_ROWS).fillna("").astype(str)
+                doc.full_tables.append(TableBlock(
+                    sheet=sheet_name,
+                    headers=list(full.columns),
+                    rows=full.values.tolist(),
+                    caption=f"{sheet_name} ({len(full)} of {len(df)} rows)",
+                ))
+                if len(df) > MAX_STRUCTURED_ROWS:
+                    doc.warnings.append(
+                        f"Structured-query store only indexed the first {MAX_STRUCTURED_ROWS} of "
+                        f"{len(df)} rows in sheet '{sheet_name}' -- aggregate SQL answers over this "
+                        f"sheet may be incomplete."
+                    )
             doc.metadata = {"sheet_count": len(sheets), "parser": "openpyxl"}
         except Exception as exc:  # noqa: BLE001
             logger.exception("Excel parse failed on %s", file_path)

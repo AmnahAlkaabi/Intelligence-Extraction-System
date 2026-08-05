@@ -116,14 +116,20 @@ async def process_file(
     # Best-effort mirror of this file's tables into the job's structured
     # SQLite store, so chat's text-to-SQL branch (graph/structured_query.py)
     # can run real queries against real typed data instead of only the
-    # 20-row text preview that reaches the vector index. job is None in
-    # isolated tests/callers that don't have a job_id to key the store by
-    # -- skip rather than write to a store nothing will ever read back.
-    if job is not None and doc.category in _STRUCTURED_CATEGORIES and doc.tables:
+    # 20-row text preview that reaches the vector index. Prefer
+    # doc.full_tables (uncapped, up to each parser's much larger safety
+    # ceiling) over doc.tables (capped to 500 rows for the Data Dump
+    # preview/export) -- full_tables is empty when a file never exceeded
+    # the preview cap to begin with, in which case doc.tables is already
+    # complete. job is None in isolated tests/callers that don't have a
+    # job_id to key the store by -- skip rather than write to a store
+    # nothing will ever read back.
+    structured_tables = doc.full_tables or doc.tables
+    if job is not None and doc.category in _STRUCTURED_CATEGORIES and structured_tables:
         try:
             async with _structured_lock(job.job_id):
                 await asyncio.to_thread(
-                    structured_store.write_tables, job.job_id, file_path, doc.tables, doc.category
+                    structured_store.write_tables, job.job_id, file_path, structured_tables, doc.category
                 )
         except Exception:
             logger.exception("Structured table ingestion failed for %s", file_path)
