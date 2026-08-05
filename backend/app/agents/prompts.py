@@ -72,8 +72,18 @@ Return ONLY a JSON object of this exact shape, nothing else:
 "relation_type": "EMPLOYS", "evidence": "short supporting snippet", "confidence": 0.85}]}
 
 Rules:
-- relation_type should be an UPPER_SNAKE_CASE verb phrase (OWNS, EMPLOYED_BY, PAID, \
-LOCATED_IN, SUBSIDIARY_OF, REPORTS_TO, TRANSACTED_WITH, etc).
+- relation_type should be an UPPER_SNAKE_CASE verb phrase. Business/organizational: OWNS, \
+EMPLOYED_BY, PAID, LOCATED_IN, SUBSIDIARY_OF, REPORTS_TO, TRANSACTED_WITH. Family/kinship: \
+MOTHER_OF, FATHER_OF, PARENT_OF, CHILD_OF, SPOUSE_OF, SIBLING_OF, GUARDIAN_OF.
+- Identification documents (passports, national/civil ID cards, birth certificates, visas -- \
+from any country) commonly list a holder's relatives via labeled fields such as "Mother's \
+Name", "Father's Name", "Spouse Name", "Guardian Name" (or their equivalents in other \
+languages). Treat a label like this directly preceding a person's name as a strong signal: \
+extract a relation FROM that named relative TO the document's main holder (the person \
+associated with the primary "Name"/"Full Name"/"Holder" field), using the matching kinship \
+relation_type -- e.g. a field "Mother's Name: Jane Doe" on a passport for holder "John Smith" \
+should produce {"source_entity": "Jane Doe", "target_entity": "John Smith", "relation_type": \
+"MOTHER_OF", ...}. Do not skip these just because they aren't a business relationship.
 - Only use entity names from the provided list (or very close variants of them).
 - If no relations found, return {"relations": []}.
 """
