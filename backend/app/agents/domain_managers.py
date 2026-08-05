@@ -16,6 +16,7 @@ import logging
 from app.agents.chunking import chunk_and_embed
 from app.agents.data_quality import assess_quality
 from app.agents.extraction import run_financial, run_ner, run_pii, run_relations, run_summary
+from app.agents.id_formats import detect_standard_ids
 from app.agents.translation import translate_document
 from app.llm.client import get_llm_client
 from app.models.schemas import DomainResult, FileCategory, Job
@@ -222,6 +223,12 @@ async def process_file(
     activity = start_activity(job, "PII Extractor", file_path)
     try:
         result.pii_findings = await run_pii(text, file_path, result.entities)
+        # Independent, non-LLM detector for internationally standardized ID
+        # formats (passport MRZ, IBAN, card numbers -- checksum-verified;
+        # a few national ID shapes -- structural only). See id_formats.py
+        # for why this runs on the raw text rather than trying to validate
+        # the LLM's already-redacted findings.
+        result.pii_findings.extend(detect_standard_ids(text, file_path))
         _apply_single_subject_fallback(result)
         finish_activity(activity, "completed")
     except Exception:

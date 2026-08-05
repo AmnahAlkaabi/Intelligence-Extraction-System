@@ -175,6 +175,13 @@ class PIIFinding(BaseModel):
     # attribution was made (multi-subject document, or genuinely
     # ambiguous) -- never guessed wrong rather than always populated.
     subject_entity: str | None = None
+    # "llm" (default): found by run_pii's language-model pass. "rules_checksum":
+    # found by agents/id_formats.py matching an internationally standardized
+    # format (passport MRZ, IBAN, card number) with its checksum verified --
+    # the strongest confidence signal this system produces. "rules_shape":
+    # matched a known national-ID format's shape/length but has no verified
+    # checksum (no single public spec to check against).
+    detection_method: str = "llm"
 
 
 class FinancialFact(BaseModel):
