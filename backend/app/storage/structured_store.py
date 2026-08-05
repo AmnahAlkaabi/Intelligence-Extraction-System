@@ -65,9 +65,45 @@ def _dedupe(names: list[str]) -> list[str]:
     return out
 
 
+# Real spreadsheets mark missing values a dozen different ways, not just
+# empty string -- treating these as NULL (instead of the one stray "N/A"
+# forcing an otherwise-numeric column to TEXT for good) is what actually
+# makes SUM()/AVG() work on real-world exports.
+_NULL_SENTINELS = {"", "n/a", "na", "null", "none", "nan", "-", "--", "n.a.", "unknown", "tbd"}
+
+# Presentational noise that doesn't change a number's value: thousands
+# separators, a currency symbol, incidental whitespace.
+_NUMERIC_NOISE_RE = re.compile(r"[,$\s]")
+
+# A column counts as numeric once this fraction of its non-null values
+# parse cleanly -- not literally every value. A handful of genuinely
+# malformed cells (a typo, a stray label) shouldn't force the whole
+# column to TEXT and break aggregate queries on the other 95% that are
+# perfectly good numbers; SQLite's type affinity tolerates the rare
+# leftover string in a numeric-affinity column without error anyway.
+_NUMERIC_TYPE_THRESHOLD = 0.9
+
+
+def _is_null_sentinel(value: str | None) -> bool:
+    return value is None or str(value).strip().lower() in _NULL_SENTINELS
+
+
+def _clean_numeric(value: str) -> str:
+    """Strips presentational formatting so "$1,234.56" / " 1,234 " parse
+    as numbers, and converts accounting-style negatives -- "(250)" -- to
+    "-250". Anything else (a real non-numeric string) is returned as-is
+    and will simply fail int()/float() below, same as before."""
+    s = value.strip()
+    negative = s.startswith("(") and s.endswith(")") and len(s) > 2
+    if negative:
+        s = s[1:-1]
+    s = _NUMERIC_NOISE_RE.sub("", s)
+    return f"-{s}" if negative and s else s
+
+
 def _is_int(v: str) -> bool:
     try:
-        int(v)
+        int(_clean_numeric(v))
         return True
     except (ValueError, TypeError):
         return False
@@ -75,34 +111,34 @@ def _is_int(v: str) -> bool:
 
 def _is_float(v: str) -> bool:
     try:
-        float(v)
+        float(_clean_numeric(v))
         return True
     except (ValueError, TypeError):
         return False
 
 
 def _infer_column_type(values: list[str]) -> str:
-    non_empty = [v for v in values if v not in ("", None)]
-    if not non_empty:
+    candidates = [v for v in values if not _is_null_sentinel(v)]
+    if not candidates:
         return "TEXT"
-    if all(_is_int(v) for v in non_empty):
+    if sum(_is_int(v) for v in candidates) / len(candidates) >= _NUMERIC_TYPE_THRESHOLD:
         return "INTEGER"
-    if all(_is_float(v) for v in non_empty):
+    if sum(_is_float(v) for v in candidates) / len(candidates) >= _NUMERIC_TYPE_THRESHOLD:
         return "REAL"
     return "TEXT"
 
 
 def _coerce_cell(value: str | None, col_type: str):
-    if value in ("", None):
+    if _is_null_sentinel(value):
         return None
     if col_type == "INTEGER":
         try:
-            return int(value)
+            return int(_clean_numeric(value))
         except ValueError:
             return value
     if col_type == "REAL":
         try:
-            return float(value)
+            return float(_clean_numeric(value))
         except ValueError:
             return value
     return value

@@ -37,6 +37,7 @@ import asyncio
 import logging
 import re
 import sqlite3
+import time
 
 from app.llm.client import get_llm_client
 from app.models.schemas import ChatResponse, StructuredQueryResult
@@ -47,6 +48,11 @@ logger = logging.getLogger(__name__)
 MAX_RESULT_ROWS = 200
 MAX_ATTEMPTS = 2
 MAX_ROWS_TO_NARRATE = 25
+QUERY_TIMEOUT_S = 10.0
+# Past this many tables, listing every one in the schema prompt risks a
+# slow, expensive LLM call for a job with dozens of structured files --
+# cap it and let a more specific follow-up question narrow things down.
+MAX_SCHEMA_TABLES = 40
 
 # Cheap heuristic for "this question probably wants a computed/filtered
 # answer over tabular data," not a semantic-similarity search -- aggregate
@@ -115,10 +121,16 @@ def _extract_sql(text: str) -> str:
 
 
 def _schema_prompt(manifest: list[dict]) -> str:
+    shown = manifest[:MAX_SCHEMA_TABLES]
     lines = []
-    for t in manifest:
+    for t in shown:
         cols = ", ".join(f"{c} ({typ})" for c, typ in t["columns"])
         lines.append(f'Table "{t["table_name"]}" (from {t["source_file"]}, {t["row_count"]} rows): {cols}')
+    if len(manifest) > MAX_SCHEMA_TABLES:
+        lines.append(
+            f"... and {len(manifest) - MAX_SCHEMA_TABLES} more table(s) not shown here "
+            f"-- ask a more specific question naming the file if it's one of those."
+        )
     return "\n".join(lines)
 
 
@@ -126,6 +138,15 @@ def _execute_readonly(job_id: str, sql: str) -> tuple[list[str], list[list[str]]
     conn = structured_store.open_readonly(job_id)
     try:
         conn.execute("PRAGMA busy_timeout = 5000")
+        # SQLite has no query-level timeout of its own -- a progress
+        # handler firing every N VM instructions is the standard way to
+        # bound a runaway generated query (an accidental cross join, a
+        # pathological ORDER BY) without touching the whole process. A
+        # truthy return aborts the query with sqlite3.OperationalError,
+        # which the retry loop above already treats like any other
+        # execution failure -- one corrected retry, then fall back.
+        deadline = time.monotonic() + QUERY_TIMEOUT_S
+        conn.set_progress_handler(lambda: time.monotonic() > deadline, 1000)
         cur = conn.execute(sql)
         headers = [d[0] for d in cur.description] if cur.description else []
         fetched = cur.fetchmany(MAX_RESULT_ROWS + 1)
@@ -133,6 +154,7 @@ def _execute_readonly(job_id: str, sql: str) -> tuple[list[str], list[list[str]]
         rows = [["" if v is None else str(v) for v in r] for r in fetched[:MAX_RESULT_ROWS]]
         return headers, rows, truncated
     finally:
+        conn.set_progress_handler(None, 0)
         conn.close()
 
 
