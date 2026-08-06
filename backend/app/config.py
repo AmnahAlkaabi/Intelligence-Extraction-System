@@ -22,10 +22,10 @@ class Settings(BaseSettings):
     kimi_model_name: str = "kimi-k2"
 
     # Which logical role maps to which backend. Values: "qwen" | "kimi"
-    role_extraction: str = "qwen"       # NER / PII / financial / relation agents
+    role_extraction: str = "kimi"       # NER / PII / financial / relation agents
     role_synthesis: str = "kimi"        # final report + knowledge-graph merge
     role_chat: str = "kimi"             # interactive Q&A over the graph
-    role_translation: str = "qwen"      # non-English -> English preprocessing, before extraction
+    role_translation: str = "qwen"      # non-English -> English preprocessing, before extraction -- deliberately kept on Qwen, not switched with the rest of extraction
 
     llm_request_timeout_s: int = 180
     llm_max_retries: int = 3

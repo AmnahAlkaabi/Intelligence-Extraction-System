@@ -71,9 +71,11 @@ KIMI_MODEL_NAME=unsloth/Kimi-K2.6-GGUF
 NEO4J_PASSWORD=<pick-a-real-password>
 ```
 
-`ROLE_EXTRACTION` / `ROLE_SYNTHESIS` / `ROLE_CHAT` map each pipeline stage to
-`qwen` or `kimi` — swap them if you'd rather use Kimi2 for extraction and
-Qwen for synthesis/chat.
+`ROLE_EXTRACTION` / `ROLE_SYNTHESIS` / `ROLE_CHAT` / `ROLE_TRANSLATION` map
+each pipeline stage to `qwen` or `kimi` — swap them to match your own
+deployment. By default, extraction/synthesis/chat all run on Kimi2 and only
+translation (non-English → English preprocessing, before extraction) stays
+on Qwen.
 
 ## Fastest path: pull pre-built images instead of building locally
 
