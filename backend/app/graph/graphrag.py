@@ -21,12 +21,16 @@ directly once the person's name is known sidesteps that entirely. Both
 sources merge into the same graph_facts list, deduplicated by entity name.
 
 The question doesn't even have to name anyone: if it doesn't (plain "what
-is the mother's name?"), the job's dominant PERSON entity (by mention
-count across chunks, not just "the only one" -- a passport with kinship
-relations extracted names several people) is assumed to be who's meant
-(see neo4j_client.find_dominant_person_entity) -- the common case for a
-single-document job like a passport, where there's one obvious main
-subject even though relatives get named too.
+is the mother's name?"), the job's dominant PERSON entity is assumed to
+be who's meant (see neo4j_client.find_dominant_person_entity) -- the
+common case for a single-document job like a passport, where there's one
+obvious main subject even though relatives get named too. "Dominant" is
+ranked primarily by RELATION-edge degree (kinship relations point from
+each named relative TO the document's holder, so the holder ends up a
+hub) and falls back to mention count across chunks only when relation
+degree ties -- mention count alone isn't enough for a short document
+(e.g. a 1-2 chunk passport) where the holder and a relative both surface
+in about the same number of chunks.
 
 Before the vector search runs, query_router.infer_categories() takes a
 cheap, deterministic pass over the question itself (keyword match, no LLM
@@ -180,12 +184,13 @@ async def _answer_question_impl(
                 # The question may not name anyone at all ("what is the
                 # mother's name?" rather than "what is John Smith's
                 # mother's name?"). Falls back to the job's dominant
-                # PERSON entity by mention count (see
-                # find_dominant_person_entity's docstring for why "exactly
-                # one PERSON entity" isn't the right check once kinship
-                # extraction names relatives too); stays silent (None)
-                # when no entity clearly dominates, since guessing among
-                # comparably-mentioned people would be worse than not
+                # PERSON entity, ranked mainly by RELATION-edge degree and
+                # only by mention count as a tiebreaker (see
+                # find_dominant_person_entity's docstring for the full
+                # history of why "exactly one PERSON entity" and later
+                # "mention count alone" both fell short); stays silent
+                # (None) when no entity clearly dominates, since guessing
+                # among comparably-ranked people would be worse than not
                 # answering.
                 dominant = await store.find_dominant_person_entity(job_id)
                 if dominant:

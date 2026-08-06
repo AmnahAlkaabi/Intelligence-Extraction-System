@@ -276,30 +276,50 @@ class Neo4jStore:
         the mother's name?" instead of "what is John Smith's mother's
         name?"), infer who it implicitly means.
 
-        Originally this required there be literally only one PERSON
-        entity in the job -- but a passport with kinship relations
-        extracted (see prompts.RELATION_SYSTEM) always has 2+ PERSON
-        entities: the holder, plus whichever relatives are named in
-        labeled fields (Mother's Name, Father's Name, ...). That made the
-        "exactly one" check never fire on precisely the documents it was
-        meant to help, once kinship extraction started working. Ranks by
-        mention count instead: the document's actual subject gets named
-        on nearly every chunk (header, MRZ, multiple fields), while a
-        relative mentioned via one labeled field gets exactly one
-        mention. The leader has to be mentioned at least twice as often
-        as the runner-up (or be the only PERSON entity at all) before
-        this commits to it -- a genuinely ambiguous document (e.g. a
-        contract between two comparably-mentioned parties) stays
-        unresolved rather than guessing, same "never guess wrong"
-        philosophy as domain_managers._apply_single_subject_fallback."""
+        v1 required there be literally only one PERSON entity in the job --
+        but a passport with kinship relations extracted (see
+        prompts.RELATION_SYSTEM) always has 2+ PERSON entities: the holder,
+        plus whichever relatives are named in labeled fields (Mother's
+        Name, Father's Name, ...). That made the "exactly one" check never
+        fire on precisely the documents it was meant to help.
+
+        v2 ranked by chunk mention count instead, on the theory that the
+        document's actual subject gets named on nearly every chunk. That
+        broke down for SHORT documents (a passport can be just 1-2 chunks
+        total) -- with barely any chunks to begin with, mention-by-chunk
+        can't meaningfully separate "mentioned throughout" from "mentioned
+        once," so the holder and a relative named in a single labeled field
+        end up with identical mention counts and the dominance check never
+        clears.
+
+        v3 (this version) ranks primarily by RELATION-edge degree instead.
+        By construction (see prompts.RELATION_SYSTEM), a kinship relation
+        points FROM the named relative TO the document's main holder --
+        "Jane Doe MOTHER_OF John Smith" for a passport belonging to John.
+        That makes the holder a hub: every labeled relative field on the
+        document adds one more distinct relation edge touching the holder,
+        while each individual relative typically has just the one edge
+        they were named in. Relation topology is a deliberate signal (it
+        reflects how the extraction prompt was designed to model these
+        documents) rather than an incidental one like raw mention count, so
+        a clear relation-degree leader is trusted outright. Only when
+        relation degree ties (including the common case of a document with
+        no extracted relations at all, where every PERSON entity sits at
+        degree 0) does this fall back to the old mention-count 2x-dominance
+        check. A genuinely ambiguous document still stays unresolved rather
+        than guessing, same "never guess wrong" philosophy as
+        domain_managers._apply_single_subject_fallback."""
         settings = self._settings
         async with self._driver.session(database=settings.neo4j_database) as session:
             result = await session.run(
                 """
-                MATCH (c:Chunk {job_id: $job_id})-[:MENTIONS]->(e:Entity {job_id: $job_id, type: 'PERSON'})
-                WITH e.name AS name, count(DISTINCT c) AS mentions
-                RETURN name, mentions
-                ORDER BY mentions DESC
+                MATCH (e:Entity {job_id: $job_id, type: 'PERSON'})
+                OPTIONAL MATCH (c:Chunk {job_id: $job_id})-[:MENTIONS]->(e)
+                WITH e, count(DISTINCT c) AS mentions
+                OPTIONAL MATCH (e)-[r:RELATION]-(:Entity {job_id: $job_id})
+                WITH e.name AS name, mentions, count(DISTINCT r) AS relation_degree
+                RETURN name, mentions, relation_degree
+                ORDER BY relation_degree DESC, mentions DESC
                 LIMIT 2
                 """,
                 job_id=job_id,
@@ -310,6 +330,8 @@ class Neo4jStore:
             if len(rows) == 1:
                 return rows[0]["name"]
             top, runner_up = rows[0], rows[1]
+            if top["relation_degree"] > runner_up["relation_degree"]:
+                return top["name"]
             if runner_up["mentions"] == 0 or top["mentions"] >= runner_up["mentions"] * 2:
                 return top["name"]
             return None
