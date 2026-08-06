@@ -235,9 +235,10 @@ class Neo4jStore:
                 """
                 MATCH (c:Chunk)-[:MENTIONS]->(e:Entity)
                 WHERE c.chunk_id IN $chunk_ids AND e.job_id = $job_id
-                OPTIONAL MATCH (e)-[r:RELATION]-(other:Entity {job_id: $job_id})
-                RETURN DISTINCT e.name AS entity, e.type AS type,
-                       collect(DISTINCT {type: r.type, other: other.name}) AS related
+                WITH DISTINCT e,
+                     [(e)-[r:RELATION]->(other:Entity {job_id: $job_id}) | {type: r.type, other: other.name, direction: 'out'}] AS out_rel,
+                     [(e)<-[r2:RELATION]-(other2:Entity {job_id: $job_id}) | {type: r2.type, other: other2.name, direction: 'in'}] AS in_rel
+                RETURN e.name AS entity, e.type AS type, out_rel + in_rel AS related
                 LIMIT 30
                 """,
                 chunk_ids=chunk_ids, job_id=job_id,
@@ -347,7 +348,22 @@ class Neo4jStore:
         once you know the person's name. This bypasses that entirely: given
         a known entity name, just ask the graph for its relations directly.
         Same return shape as expand_entities_for_chunks so callers can
-        merge the two lists."""
+        merge the two lists.
+
+        Each related-entity dict carries a "direction" ('out' if `e` is the
+        RELATION's source, 'in' if `e` is its target) -- this used to be an
+        undirected `(e)-[r]-(other)` match with no direction captured at
+        all, which silently reversed the meaning of every asymmetric
+        relation. Kinship relations are extracted FROM the named relative
+        TO the document's holder (see prompts.RELATION_SYSTEM), e.g.
+        (Jane)-[:MOTHER_OF]->(Ankit) meaning "Jane is Ankit's mother". With
+        direction discarded, looking up Ankit produced the fact
+        "Ankit (PERSON): MOTHER_OF -> Jane" -- read literally that's
+        backwards (implies Ankit is Jane's mother), which is exactly the
+        kind of self-contradictory context that makes an LLM instructed to
+        "note discrepancies" hedge instead of answering. Callers must use
+        `direction` to render the relation sentence with the correct
+        subject/object order (see graphrag.py's context formatting)."""
         if not entity_names:
             return []
         settings = self._settings
@@ -356,9 +372,10 @@ class Neo4jStore:
                 """
                 MATCH (e:Entity {job_id: $job_id})
                 WHERE e.name IN $entity_names
-                OPTIONAL MATCH (e)-[r:RELATION]-(other:Entity {job_id: $job_id})
-                RETURN DISTINCT e.name AS entity, e.type AS type,
-                       collect(DISTINCT {type: r.type, other: other.name}) AS related
+                WITH DISTINCT e,
+                     [(e)-[r:RELATION]->(other:Entity {job_id: $job_id}) | {type: r.type, other: other.name, direction: 'out'}] AS out_rel,
+                     [(e)<-[r2:RELATION]-(other2:Entity {job_id: $job_id}) | {type: r2.type, other: other2.name, direction: 'in'}] AS in_rel
+                RETURN e.name AS entity, e.type AS type, out_rel + in_rel AS related
                 LIMIT 30
                 """,
                 job_id=job_id, entity_names=entity_names,

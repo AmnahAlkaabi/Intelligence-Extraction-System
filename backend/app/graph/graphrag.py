@@ -198,12 +198,12 @@ async def _answer_question_impl(
             if named_entities:
                 direct_facts = await store.expand_relations_for_entities(job_id, named_entities)
                 # Union rather than "first source wins" -- both sources
-                # query the same (e)-[r:RELATION]-(other) shape for a
-                # found entity, so in practice neither is ever strictly
-                # richer, but merging relation lists instead of keeping
-                # only whichever list showed up first is what actually
-                # guarantees no real fact gets dropped just because the
-                # entity happened to also turn up via a chunk.
+                # query the same directional (e)-[r]->(other) / (e)<-[r]-(other)
+                # shape for a found entity, so in practice neither is ever
+                # strictly richer, but merging relation lists instead of
+                # keeping only whichever list showed up first is what
+                # actually guarantees no real fact gets dropped just
+                # because the entity happened to also turn up via a chunk.
                 by_entity = {f["entity"]: f for f in graph_facts}
                 for fact in direct_facts:
                     existing = by_entity.get(fact["entity"])
@@ -250,9 +250,23 @@ async def _answer_question_impl(
     if graph_facts:
         context_parts.append("\n--- Related graph facts ---")
         for fact in graph_facts:
-            related_str = "; ".join(
-                f"{r['type']} -> {r['other']}" for r in fact.get("related", []) if r.get("other")
-            )
+            # Render each relation as an explicit subject-verb-object
+            # sentence using its captured direction, e.g. "Jane Doe
+            # MOTHER_OF Ankit" -- NOT "{r['type']} -> {r['other']}" (that
+            # older format silently assumed `fact['entity']` was always the
+            # relation's source, which is backwards for e.g. kinship
+            # relations extracted FROM a named relative TO the document's
+            # holder; looking up the holder produced a fact that read as
+            # if the holder were the relative's mother).
+            sentences = []
+            for r in fact.get("related", []):
+                if not r.get("other") or not r.get("type"):
+                    continue
+                if r.get("direction") == "in":
+                    sentences.append(f"{r['other']} {r['type']} {fact['entity']}")
+                else:
+                    sentences.append(f"{fact['entity']} {r['type']} {r['other']}")
+            related_str = "; ".join(sentences)
             context_parts.append(f"{fact['entity']} ({fact['type']}): {related_str or 'no known relations'}")
 
     context = "\n\n".join(context_parts)
