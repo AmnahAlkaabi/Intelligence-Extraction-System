@@ -111,8 +111,8 @@ export default function UploadPage() {
       </div>
 
       <div className="landing-meta-row">
-        <span>Qwen · extraction &amp; translation</span>
-        <span>Kimi2 · synthesis &amp; chat</span>
+        <span>Qwen · translation</span>
+        <span>Kimi2 · extraction, synthesis &amp; chat</span>
         <span>Neo4j · knowledge graph</span>
       </div>
     </div>

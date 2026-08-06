@@ -6,6 +6,12 @@ import type { ReactNode } from "react";
 // kept here as the single source of truth so the board and any future
 // legend stay in sync with how job_manager/domain_managers actually name
 // and dispatch each agent.
+//
+// This is a hardcoded display label, not read from the backend's actual
+// ROLE_EXTRACTION/ROLE_SYNTHESIS/ROLE_CHAT/ROLE_TRANSLATION config -- if
+// those role->backend mappings change (backend/app/config.py), the
+// `engine` value for the affected agents below needs updating by hand or
+// this badge silently shows the wrong model.
 export type Engine = "qwen" | "kimi" | "localml" | "rules";
 
 const ICON_PROPS = {
@@ -81,19 +87,19 @@ const ICONS: Record<string, { engine: Engine; path: ReactNode }> = {
     path: <><path d="M12 3.5 3.5 8 12 12.5 20.5 8Z" /><path d="M3.5 12 12 16.5 20.5 12M3.5 16 12 20.5 20.5 16" /></>,
   },
   "Entity Extractor": {
-    engine: "qwen",
+    engine: "kimi",
     path: <><circle cx="9" cy="9" r="4.5" /><path d="M13.5 5.5 20 12l-8 8-6.5-6.5" /></>,
   },
   "PII Extractor": {
-    engine: "qwen",
+    engine: "kimi",
     path: <><path d="M12 3 4.5 6v6c0 5 3.2 8 7.5 9 4.3-1 7.5-4 7.5-9V6Z" /><path d="M8.7 12.2l2.2 2.2 4.4-4.6" /></>,
   },
   "Financial Extractor": {
-    engine: "qwen",
+    engine: "kimi",
     path: <><circle cx="12" cy="12" r="8.5" /><path d="M12 7v10M9.3 9.3c0-1.3 1.2-2 2.7-2s2.7.8 2.7 2c0 3-5.4 1.7-5.4 4.6 0 1.3 1.2 2.1 2.7 2.1s2.7-.8 2.7-2.1" /></>,
   },
   "Relation Extractor": {
-    engine: "qwen",
+    engine: "kimi",
     path: <><path d="M9.5 14.5 14.5 9.5" /><path d="M7 17 4.8 14.8a4 4 0 0 1 0-5.6l2-2a4 4 0 0 1 5.6 0M17 7l2.2 2.2a4 4 0 0 1 0 5.6l-2 2a4 4 0 0 1-5.6 0" /></>,
   },
   "Data Quality Validator": {
