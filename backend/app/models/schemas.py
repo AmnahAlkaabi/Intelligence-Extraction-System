@@ -10,7 +10,7 @@ persisting job state).
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 
 from pydantic import BaseModel, Field
@@ -18,6 +18,22 @@ from pydantic import BaseModel, Field
 
 def _id() -> str:
     return uuid.uuid4().hex[:12]
+
+
+def _utc_now() -> datetime:
+    """Timezone-AWARE now, not datetime.utcnow() -- utcnow() returns a
+    naive datetime that Pydantic serializes to JSON with no timezone
+    offset (e.g. "2026-08-06T04:38:00"), which every other aware
+    datetime in this app (anything set via datetime.now(timezone.utc),
+    e.g. job_manager.touch()) serializes WITH one ("...+00:00"). The
+    frontend's `new Date(...)` parses a date-time string with no offset
+    as LOCAL time, not UTC -- so comparing a naive-serialized timestamp
+    against an aware-serialized one in JS silently comes out wrong by
+    exactly the browser's UTC offset. This was the actual cause of
+    CompletionHero's "Time to complete" showing ~241 minutes for jobs
+    that took a couple of minutes on a UTC+4 machine (240 = 4h, not a
+    coincidence). Use this everywhere instead of datetime.utcnow()."""
+    return datetime.now(timezone.utc)
 
 
 class FileCategory(str, Enum):
@@ -401,7 +417,7 @@ class AgentActivity(BaseModel):
     agent: str
     file: str
     status: str = "running"     # running | completed | failed | skipped
-    started_at: datetime = Field(default_factory=datetime.utcnow)
+    started_at: datetime = Field(default_factory=_utc_now)
     finished_at: datetime | None = None
     duration_ms: int | None = None
 
@@ -423,7 +439,7 @@ class Job(BaseModel):
     job_id: str = Field(default_factory=_id)
     name: str | None = None  # user-assigned label; falls back to job_id in the UI when unset
     status: JobStatus = JobStatus.QUEUED
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utc_now)
     # updated_at is a generic "last modified for any reason" timestamp --
     # bumped by renames (routes_jobs.py) and every processing step alike
     # (job_manager.touch), so it keeps moving long after a job actually
@@ -433,7 +449,7 @@ class Job(BaseModel):
     # of however long it's been since the job was last touched for any
     # unrelated reason. None for jobs that haven't completed yet, or that
     # completed before this field existed.
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=_utc_now)
     completed_at: datetime | None = None
     files: list[FileProgress] = []
     progress_pct: float = 0.0
