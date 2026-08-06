@@ -252,13 +252,19 @@ class Neo4jStore:
         resolves directly to the John Smith Entity node. See
         expand_relations_for_entities for why this matters: chunk vector
         search can easily miss the one short passage that actually
-        mentions a specific person."""
+        mentions a specific person.
+
+        Case-insensitive on purpose (toLower on both sides) -- a chat
+        question is casually typed ("what's john smith's mother's name")
+        far more often than a source document's own text is, so a
+        case-sensitive CONTAINS silently missed real matches whenever the
+        typed case didn't happen to match how NER extracted the name."""
         settings = self._settings
         async with self._driver.session(database=settings.neo4j_database) as session:
             result = await session.run(
                 """
                 MATCH (e:Entity {job_id: $job_id})
-                WHERE $text CONTAINS e.name
+                WHERE toLower($text) CONTAINS toLower(e.name)
                 RETURN DISTINCT e.name AS name
                 """,
                 job_id=job_id, text=text,
