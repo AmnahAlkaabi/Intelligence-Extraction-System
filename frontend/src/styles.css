@@ -681,6 +681,14 @@ a { color: var(--accent); text-decoration: none; }
 .sev-medium { background: rgba(226,163,82,0.15); color: var(--warn); }
 .sev-low { background: rgba(140,164,189,0.15); color: var(--muted); }
 
+.detect-chip {
+  padding: 2px 8px; border-radius: 8px; font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.3px; white-space: nowrap; cursor: help;
+}
+.detect-rules_checksum { background: rgba(85,189,136,0.15); color: var(--accent2); }
+.detect-rules_shape { background: rgba(232,193,90,0.12); color: var(--warn); }
+.detect-llm { background: transparent; color: var(--dim); }
+
 .dtype-chip {
   padding: 2px 8px; border-radius: 8px; font-size: 10px; text-transform: uppercase;
   background: var(--bg3); color: var(--muted); font-family: monospace;

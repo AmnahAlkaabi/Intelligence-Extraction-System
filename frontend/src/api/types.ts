@@ -123,6 +123,8 @@ export interface PIIFinding {
   severity: "low" | "medium" | "high" | "critical";
   source_file: string;
   location?: string | null;
+  subject_entity?: string | null;
+  detection_method?: "llm" | "rules_checksum" | "rules_shape";
 }
 
 export interface ComplianceReport {
