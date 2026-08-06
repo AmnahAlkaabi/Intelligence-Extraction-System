@@ -274,25 +274,45 @@ class Neo4jStore:
     async def find_dominant_person_entity(self, job_id: str) -> str | None:
         """When a chat question doesn't name anyone explicitly ("what is
         the mother's name?" instead of "what is John Smith's mother's
-        name?"), and the job has exactly one PERSON entity, that's almost
-        certainly who the question implicitly means -- the single-subject
-        document case (a passport, an ID card, a single-employee form).
-        Mirrors domain_managers._apply_single_subject_fallback's identical
-        reasoning for PII attribution. Returns None (no opinion) for zero
-        or multiple PERSON entities -- guessing among several people is
-        worse than not guessing at all."""
+        name?"), infer who it implicitly means.
+
+        Originally this required there be literally only one PERSON
+        entity in the job -- but a passport with kinship relations
+        extracted (see prompts.RELATION_SYSTEM) always has 2+ PERSON
+        entities: the holder, plus whichever relatives are named in
+        labeled fields (Mother's Name, Father's Name, ...). That made the
+        "exactly one" check never fire on precisely the documents it was
+        meant to help, once kinship extraction started working. Ranks by
+        mention count instead: the document's actual subject gets named
+        on nearly every chunk (header, MRZ, multiple fields), while a
+        relative mentioned via one labeled field gets exactly one
+        mention. The leader has to be mentioned at least twice as often
+        as the runner-up (or be the only PERSON entity at all) before
+        this commits to it -- a genuinely ambiguous document (e.g. a
+        contract between two comparably-mentioned parties) stays
+        unresolved rather than guessing, same "never guess wrong"
+        philosophy as domain_managers._apply_single_subject_fallback."""
         settings = self._settings
         async with self._driver.session(database=settings.neo4j_database) as session:
             result = await session.run(
                 """
-                MATCH (e:Entity {job_id: $job_id, type: 'PERSON'})
-                RETURN DISTINCT e.name AS name
+                MATCH (c:Chunk {job_id: $job_id})-[:MENTIONS]->(e:Entity {job_id: $job_id, type: 'PERSON'})
+                WITH e.name AS name, count(DISTINCT c) AS mentions
+                RETURN name, mentions
+                ORDER BY mentions DESC
                 LIMIT 2
                 """,
                 job_id=job_id,
             )
-            names = [record["name"] async for record in result]
-            return names[0] if len(names) == 1 else None
+            rows = [record.data() async for record in result]
+            if not rows:
+                return None
+            if len(rows) == 1:
+                return rows[0]["name"]
+            top, runner_up = rows[0], rows[1]
+            if runner_up["mentions"] == 0 or top["mentions"] >= runner_up["mentions"] * 2:
+                return top["name"]
+            return None
 
     async def expand_relations_for_entities(self, job_id: str, entity_names: list[str]) -> list[dict]:
         """Direct 1-hop graph expansion seeded by entity name instead of by
