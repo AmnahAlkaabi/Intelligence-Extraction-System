@@ -14,23 +14,41 @@ checksum), independent of what the LLM did or didn't notice.
 
 Two tiers, deliberately kept distinct via PIIFinding.detection_method:
 
-  "rules_checksum" -- the format has ONE public specification with a real
-  checksum, identical for every country/issuer that uses it, so a match
-  is a strong positive signal, not a guess:
+  "rules_checksum" -- the format has a public specification with a real
+  checksum. Confidence basis noted per format since some are cross-verified
+  against multiple independent sources and some against one:
     - Passport MRZ (ICAO Doc 9303, TD3 two-line format printed on the
       photo page of every modern passport worldwide) -- weighted mod-10
       check digits over the passport number, DOB, and expiry date.
-    - IBAN (ISO 13616) -- mod-97 checksum.
+    - IBAN (ISO 13616) -- mod-97 checksum, one algorithm for every
+      IBAN-using country.
     - Payment card numbers (ISO/IEC 7812) -- Luhn checksum.
+    - India Aadhaar (UIDAI) -- Verhoeff checksum. Table values (the D, P,
+      and inverse tables the algorithm is built from) cross-verified
+      against two independent real implementations (Apache Commons
+      Validator's VerhoeffCheckDigit.java and a separate GitHub Aadhaar
+      generator) that agree digit-for-digit.
+    - Brazil CPF -- two mod-11 check digits. Verified against two
+      commonly-cited known-valid CPF test numbers, not just the algorithm
+      description.
+    - Canada SIN and South Africa ID -- both use the plain Luhn algorithm
+      (same one as payment cards, just applied to 9 or 13 digits), per
+      multiple independent sources with no documented deviation.
+    - China Resident ID (GB 11643, ISO 7064 MOD 11-2) -- weighted checksum
+      with a documented weight table and remainder-to-check-character
+      mapping. Single detailed source for the exact table values -- flagged
+      as the least independently cross-verified of this checksum tier, so
+      treat a match here as a good signal but with a bit more caution than
+      the others until cross-checked against a second source.
 
   "rules_shape" -- a small registry of well-documented NATIONAL formats
   matched by shape only (length + character classes, plus any publicly
   documented structural exclusions, e.g. invalid SSN ranges). These do
-  NOT have a checksum verified here -- unlike the three formats above,
-  there isn't one universal public spec for these to lean on, and getting
-  a checksum algorithm subtly wrong would be worse than not claiming one
-  (false confidence). Extend _NATIONAL_ID_PATTERNS as more formats are
-  confirmed against an authoritative source, not guessed.
+  NOT have a checksum verified here -- there isn't one universal public
+  spec for these to lean on, and getting a checksum algorithm subtly
+  wrong would be worse than not claiming one (false confidence). Extend
+  _NATIONAL_ID_PATTERNS as more formats are confirmed against an
+  authoritative source, not guessed.
 """
 import re
 from dataclasses import dataclass
@@ -178,6 +196,191 @@ def _find_card_findings(text: str, source_file: str) -> list[PIIFinding]:
 
 
 # ---------------------------------------------------------------------
+# India Aadhaar (UIDAI) -- Verhoeff checksum. D/P/inv tables cross-verified
+# against two independent real implementations (Apache Commons Validator's
+# VerhoeffCheckDigit.java and a separate GitHub Aadhaar generator) that
+# agree digit-for-digit -- see module docstring.
+# ---------------------------------------------------------------------
+_VERHOEFF_D = (
+    (0, 1, 2, 3, 4, 5, 6, 7, 8, 9),
+    (1, 2, 3, 4, 0, 6, 7, 8, 9, 5),
+    (2, 3, 4, 0, 1, 7, 8, 9, 5, 6),
+    (3, 4, 0, 1, 2, 8, 9, 5, 6, 7),
+    (4, 0, 1, 2, 3, 9, 5, 6, 7, 8),
+    (5, 9, 8, 7, 6, 0, 4, 3, 2, 1),
+    (6, 5, 9, 8, 7, 1, 0, 4, 3, 2),
+    (7, 6, 5, 9, 8, 2, 1, 0, 4, 3),
+    (8, 7, 6, 5, 9, 3, 2, 1, 0, 4),
+    (9, 8, 7, 6, 5, 4, 3, 2, 1, 0),
+)
+_VERHOEFF_P = (
+    (0, 1, 2, 3, 4, 5, 6, 7, 8, 9),
+    (1, 5, 7, 6, 2, 8, 3, 0, 9, 4),
+    (5, 8, 0, 3, 7, 9, 6, 1, 4, 2),
+    (8, 9, 1, 6, 0, 4, 3, 5, 2, 7),
+    (9, 4, 5, 3, 1, 2, 6, 8, 7, 0),
+    (4, 2, 8, 6, 5, 7, 3, 9, 0, 1),
+    (2, 7, 9, 3, 8, 0, 6, 4, 1, 5),
+    (7, 0, 4, 6, 9, 1, 3, 2, 5, 8),
+)
+# _VERHOEFF_INV unused by validation (only needed to *generate* a new
+# check digit, which this module never does) -- kept out to avoid dead code.
+
+_AADHAAR_CANDIDATE_RE = re.compile(r"\b(\d{4}[ ]?\d{4}[ ]?\d{4})\b")
+
+
+def _verhoeff_valid(code: str) -> bool:
+    """checksum accumulates right-to-left; valid iff it lands back on 0.
+    Matches Apache Commons Validator's calculateChecksum(code, includesCheckDigit=True)."""
+    checksum = 0
+    for i, ch in enumerate(reversed(code)):
+        if not ch.isdigit():
+            return False
+        checksum = _VERHOEFF_D[checksum][_VERHOEFF_P[i % 8][int(ch)]]
+    return checksum == 0
+
+
+def _find_aadhaar_findings(text: str, source_file: str) -> list[PIIFinding]:
+    findings = []
+    for m in _AADHAAR_CANDIDATE_RE.finditer(text):
+        candidate = m.group(1).replace(" ", "")
+        if len(candidate) != 12 or candidate[0] in "01":  # UIDAI: never starts with 0 or 1
+            continue
+        if _verhoeff_valid(candidate):
+            findings.append(PIIFinding(
+                category="NATIONAL_ID",
+                value_redacted=_redact(candidate),
+                severity="critical",
+                source_file=source_file,
+                location="India Aadhaar (Verhoeff-verified)",
+                detection_method="rules_checksum",
+            ))
+    return findings
+
+
+# ---------------------------------------------------------------------
+# Brazil CPF -- two mod-11 check digits over digits 1-9 and 1-10.
+# Verified against two commonly-cited known-valid CPF test numbers
+# (529.982.247-25 and 111.444.777-35), not just the algorithm description.
+# ---------------------------------------------------------------------
+_CPF_CANDIDATE_RE = re.compile(r"\b(\d{3}\.?\d{3}\.?\d{3}-?\d{2})\b")
+
+
+def _cpf_check_digit(digits: str, weights: tuple[int, ...]) -> int:
+    total = sum(int(d) * w for d, w in zip(digits, weights))
+    rem = total % 11
+    return 0 if rem < 2 else 11 - rem
+
+
+def _cpf_valid(cpf: str) -> bool:
+    if len(cpf) != 11 or len(set(cpf)) == 1:  # reject all-same-digit repdigits (mathematically pass but invalid)
+        return False
+    check1 = _cpf_check_digit(cpf[0:9], (10, 9, 8, 7, 6, 5, 4, 3, 2))
+    check2 = _cpf_check_digit(cpf[0:9] + str(check1), (11, 10, 9, 8, 7, 6, 5, 4, 3, 2))
+    return cpf[9] == str(check1) and cpf[10] == str(check2)
+
+
+def _find_cpf_findings(text: str, source_file: str) -> list[PIIFinding]:
+    findings = []
+    for m in _CPF_CANDIDATE_RE.finditer(text):
+        candidate = re.sub(r"[.\-]", "", m.group(1))
+        if _cpf_valid(candidate):
+            findings.append(PIIFinding(
+                category="NATIONAL_ID",
+                value_redacted=_redact(candidate),
+                severity="critical",
+                source_file=source_file,
+                location="Brazil CPF (mod-11 verified)",
+                detection_method="rules_checksum",
+            ))
+    return findings
+
+
+# ---------------------------------------------------------------------
+# Canada SIN and South Africa ID -- both the plain Luhn algorithm (same
+# one as payment cards, above), just applied to a different digit count.
+# South Africa ID additionally checks that its first 6 digits form a
+# plausible YYMMDD date (it encodes the holder's DOB) -- narrows false
+# positives against arbitrary 13-digit Luhn-valid numbers, which would
+# otherwise also satisfy the generic card-number check above.
+# ---------------------------------------------------------------------
+_SIN_CANDIDATE_RE = re.compile(r"\b(\d{3}[ -]?\d{3}[ -]?\d{3})\b")
+_SA_ID_CANDIDATE_RE = re.compile(r"\b(\d{13})\b")
+
+
+def _find_sin_findings(text: str, source_file: str) -> list[PIIFinding]:
+    findings = []
+    for m in _SIN_CANDIDATE_RE.finditer(text):
+        candidate = re.sub(r"[ -]", "", m.group(1))
+        if len(candidate) == 9 and _luhn_valid(candidate):
+            findings.append(PIIFinding(
+                category="NATIONAL_ID",
+                value_redacted=_redact(candidate),
+                severity="critical",
+                source_file=source_file,
+                location="Canada SIN (Luhn-verified)",
+                detection_method="rules_checksum",
+            ))
+    return findings
+
+
+def _is_plausible_yymmdd(s: str) -> bool:
+    mm, dd = int(s[2:4]), int(s[4:6])
+    return 1 <= mm <= 12 and 1 <= dd <= 31
+
+
+def _find_south_africa_id_findings(text: str, source_file: str) -> list[PIIFinding]:
+    findings = []
+    for m in _SA_ID_CANDIDATE_RE.finditer(text):
+        candidate = m.group(1)
+        if not _is_plausible_yymmdd(candidate) or candidate[10] not in "01":  # citizenship digit
+            continue
+        if _luhn_valid(candidate):
+            findings.append(PIIFinding(
+                category="NATIONAL_ID",
+                value_redacted=_redact(candidate),
+                severity="critical",
+                source_file=source_file,
+                location="South Africa ID (Luhn-verified)",
+                detection_method="rules_checksum",
+            ))
+    return findings
+
+
+# ---------------------------------------------------------------------
+# China Resident ID (GB 11643, ISO 7064 MOD 11-2). Weight table and
+# remainder-to-check-character mapping from a single detailed source --
+# the least independently cross-verified format in this checksum tier
+# (see module docstring); still a real published national standard, not
+# a guess, but worth a second-source check before leaning on it heavily.
+# ---------------------------------------------------------------------
+_CHINA_ID_WEIGHTS = (7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2)
+_CHINA_ID_CHECK_CHARS = ("1", "0", "X", "9", "8", "7", "6", "5", "4", "3", "2")
+_CHINA_ID_CANDIDATE_RE = re.compile(r"\b(\d{17}[\dXx])\b")
+
+
+def _china_id_valid(code: str) -> bool:
+    total = sum(int(d) * w for d, w in zip(code[:17], _CHINA_ID_WEIGHTS))
+    return _CHINA_ID_CHECK_CHARS[total % 11] == code[17].upper()
+
+
+def _find_china_id_findings(text: str, source_file: str) -> list[PIIFinding]:
+    findings = []
+    for m in _CHINA_ID_CANDIDATE_RE.finditer(text):
+        candidate = m.group(1)
+        if _china_id_valid(candidate):
+            findings.append(PIIFinding(
+                category="NATIONAL_ID",
+                value_redacted=_redact(candidate),
+                severity="critical",
+                source_file=source_file,
+                location="China Resident ID (MOD 11-2 verified)",
+                detection_method="rules_checksum",
+            ))
+    return findings
+
+
+# ---------------------------------------------------------------------
 # National ID formats -- shape only, no checksum claimed (see module
 # docstring). Each entry: (PII category, human label, compiled regex).
 # ---------------------------------------------------------------------
@@ -233,5 +436,10 @@ def detect_standard_ids(text: str, source_file: str) -> list[PIIFinding]:
     findings.extend(_find_mrz_findings(text, source_file))
     findings.extend(_find_iban_findings(text, source_file))
     findings.extend(_find_card_findings(text, source_file))
+    findings.extend(_find_aadhaar_findings(text, source_file))
+    findings.extend(_find_cpf_findings(text, source_file))
+    findings.extend(_find_sin_findings(text, source_file))
+    findings.extend(_find_south_africa_id_findings(text, source_file))
+    findings.extend(_find_china_id_findings(text, source_file))
     findings.extend(_find_national_id_findings(text, source_file))
     return findings
