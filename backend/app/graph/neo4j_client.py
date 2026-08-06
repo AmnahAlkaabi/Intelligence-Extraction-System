@@ -271,6 +271,29 @@ class Neo4jStore:
             )
             return [record["name"] async for record in result]
 
+    async def find_dominant_person_entity(self, job_id: str) -> str | None:
+        """When a chat question doesn't name anyone explicitly ("what is
+        the mother's name?" instead of "what is John Smith's mother's
+        name?"), and the job has exactly one PERSON entity, that's almost
+        certainly who the question implicitly means -- the single-subject
+        document case (a passport, an ID card, a single-employee form).
+        Mirrors domain_managers._apply_single_subject_fallback's identical
+        reasoning for PII attribution. Returns None (no opinion) for zero
+        or multiple PERSON entities -- guessing among several people is
+        worse than not guessing at all."""
+        settings = self._settings
+        async with self._driver.session(database=settings.neo4j_database) as session:
+            result = await session.run(
+                """
+                MATCH (e:Entity {job_id: $job_id, type: 'PERSON'})
+                RETURN DISTINCT e.name AS name
+                LIMIT 2
+                """,
+                job_id=job_id,
+            )
+            names = [record["name"] async for record in result]
+            return names[0] if len(names) == 1 else None
+
     async def expand_relations_for_entities(self, job_id: str, entity_names: list[str]) -> list[dict]:
         """Direct 1-hop graph expansion seeded by entity name instead of by
         retrieved chunk (compare expand_entities_for_chunks). Chat's chunk

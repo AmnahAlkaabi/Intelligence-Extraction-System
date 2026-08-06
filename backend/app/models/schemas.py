@@ -424,7 +424,17 @@ class Job(BaseModel):
     name: str | None = None  # user-assigned label; falls back to job_id in the UI when unset
     status: JobStatus = JobStatus.QUEUED
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    # updated_at is a generic "last modified for any reason" timestamp --
+    # bumped by renames (routes_jobs.py) and every processing step alike
+    # (job_manager.touch), so it keeps moving long after a job actually
+    # finished. completed_at is set exactly once, the moment job.status
+    # first becomes COMPLETE, specifically so the UI's "Time to complete"
+    # stat (CompletionHero.tsx) reflects real processing duration instead
+    # of however long it's been since the job was last touched for any
+    # unrelated reason. None for jobs that haven't completed yet, or that
+    # completed before this field existed.
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+    completed_at: datetime | None = None
     files: list[FileProgress] = []
     progress_pct: float = 0.0
     result: SynthesisOutput | None = None

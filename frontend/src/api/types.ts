@@ -210,6 +210,7 @@ export interface Job {
   status: JobStatusValue;
   created_at: string;
   updated_at: string;
+  completed_at?: string | null;
   files: FileProgress[];
   progress_pct: number;
   result: SynthesisOutput | null;

@@ -1,7 +1,14 @@
 import type { Job } from "../api/types";
 
 function elapsed(job: Job): string {
-  const ms = new Date(job.updated_at).getTime() - new Date(job.created_at).getTime();
+  // completed_at is set exactly once, when the job actually finished --
+  // updated_at keeps moving for unrelated reasons afterward (a rename,
+  // any later touch()), which used to make this stat balloon to however
+  // long ago the job was last touched instead of real processing time.
+  // Falls back to updated_at for jobs that completed before this field
+  // existed.
+  const end = job.completed_at ?? job.updated_at;
+  const ms = new Date(end).getTime() - new Date(job.created_at).getTime();
   if (!(ms > 0)) return "—";
   const s = Math.round(ms / 1000);
   if (s < 60) return `${s}s`;

@@ -395,6 +395,7 @@ class JobManager:
 
             job.status = JobStatus.COMPLETE
             job.progress_pct = 100.0
+            job.completed_at = datetime.now(timezone.utc)
         except Exception as exc:  # noqa: BLE001
             logger.exception("Synthesis failed for job %s", job_id)
             job.status = JobStatus.FAILED

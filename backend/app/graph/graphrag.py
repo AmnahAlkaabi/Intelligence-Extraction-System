@@ -20,6 +20,13 @@ relation itself (MOTHER_OF) sits right there in the graph; asking the graph
 directly once the person's name is known sidesteps that entirely. Both
 sources merge into the same graph_facts list, deduplicated by entity name.
 
+The question doesn't even have to name anyone: if it doesn't (plain "what
+is the mother's name?"), and the job has exactly one PERSON entity, that
+one entity is assumed to be who's meant (see
+neo4j_client.find_dominant_person_entity) -- the common case for a
+single-document job like a passport, where there's only one obvious
+subject to begin with.
+
 Before the vector search runs, query_router.infer_categories() takes a
 cheap, deterministic pass over the question itself (keyword match, no LLM
 call) to guess which file categories it's probably about, and that guess
@@ -168,6 +175,17 @@ async def _answer_question_impl(
         # merged in deduplicated by entity name.
         try:
             named_entities = await store.find_entities_mentioned_in_text(job_id, message)
+            if not named_entities:
+                # The question may not name anyone at all ("what is the
+                # mother's name?" rather than "what is John Smith's
+                # mother's name?") -- common for a single-document job
+                # where there's only one obvious subject. Falls back to
+                # that one PERSON entity when the job has exactly one;
+                # stays silent (None) for zero or multiple, since guessing
+                # among several people would be worse than not answering.
+                dominant = await store.find_dominant_person_entity(job_id)
+                if dominant:
+                    named_entities = [dominant]
             if named_entities:
                 direct_facts = await store.expand_relations_for_entities(job_id, named_entities)
                 # Union rather than "first source wins" -- both sources
