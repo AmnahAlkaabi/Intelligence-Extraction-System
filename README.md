@@ -107,22 +107,53 @@ build after I push a fix — no local build involved at all.
 Images must be built where the model weights (BGE + Docling) and Python/npm
 packages can be fetched, then transferred to the air-gapped host as tarballs.
 
+**One command (recommended):** `scripts/package-airgapped.sh` automates
+everything below — building (or pulling) every image, saving them, and
+bundling them with a clean copy of this repo into a single archive that
+needs nothing but Docker on the target machine:
+
+```bash
+# On a connected machine, from the repo root:
+./scripts/package-airgapped.sh          # builds images locally (needs internet)
+# — or —
+./scripts/package-airgapped.sh pull     # pulls pre-built images from GHCR instead
+
+# Produces dist/data-loom-airgapped-package.tar.gz
+```
+
+Transfer that single archive to the air-gapped host, extract it, then:
+
+```bash
+cp backend/.env.example backend/.env   # then edit with real on-prem endpoints
+./run-airgapped.sh                     # loads the bundled images and starts the stack
+```
+
+`run-airgapped.sh` never touches the network — it only `docker load`s the
+tarball already sitting next to it and runs `docker compose up -d --pull
+never`. See `PACKAGE_README.txt` inside the extracted archive for the short
+version of these same steps.
+
+**Manual equivalent**, if you'd rather run each step yourself (e.g. to
+customize what gets included):
+
 **On a connected machine:**
 
 ```bash
 docker compose build
-docker save iex-backend:latest iex-frontend:latest neo4j:5.26-community -o iex-images.tar
+docker save "$(docker compose config --images backend)" \
+            "$(docker compose config --images frontend)" \
+            neo4j:5.26-community -o data-loom-images.tar
 ```
 
-**Transfer** `iex-images.tar` (and this repo) to the air-gapped host via your
-usual approved transfer process (USB, secure file drop, etc).
+**Transfer** `data-loom-images.tar` (and this repo) to the air-gapped host via
+your usual approved transfer process (USB, secure file drop, etc).
 
 **On the air-gapped host:**
 
 ```bash
-docker load -i iex-images.tar
+docker load -i data-loom-images.tar
 cp backend/.env.example backend/.env   # then edit with real on-prem endpoints
-docker compose up -d
+docker compose up -d --pull never
 ```
 
 The app is served at `http://<host>:8080`. The backend API is at
