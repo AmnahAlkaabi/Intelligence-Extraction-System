@@ -8,6 +8,18 @@ can cite specific text passages *and* reason over the structured graph
 (ownership chains, cross-document links) — this is what distinguishes it
 from plain vector-only RAG.
 
+A second, independent expansion path runs alongside the chunk-based one:
+any of the job's known entity names that appear literally in the question
+itself get their relations pulled directly from the graph (see
+neo4j_client.find_entities_mentioned_in_text / expand_relations_for_entities),
+with no dependency on chunk vector search having actually retrieved a
+passage that mentions them. This exists because a short, information-dense
+passage -- a passport's few lines of text -- can lose out on pure semantic
+similarity to a short question ("what is X's mother's name") even when the
+relation itself (MOTHER_OF) sits right there in the graph; asking the graph
+directly once the person's name is known sidesteps that entirely. Both
+sources merge into the same graph_facts list, deduplicated by entity name.
+
 Before the vector search runs, query_router.infer_categories() takes a
 cheap, deterministic pass over the question itself (keyword match, no LLM
 call) to guess which file categories it's probably about, and that guess
@@ -143,6 +155,41 @@ async def _answer_question_impl(
             except Exception:
                 logger.exception("Graph expansion failed for job %s", job_id)
                 graph_facts = []
+
+        # Directly resolve any of this job's known entities named in the
+        # question itself, and pull THEIR relations too -- independent of
+        # whether chunk vector search above happened to retrieve a passage
+        # mentioning them. This is what makes "what is John Smith's
+        # mother's name" reliable: the passport's few lines of text can
+        # easily lose out to other, longer chunks on pure semantic
+        # similarity to a short question, even though the relation
+        # (MOTHER_OF) sits right there in the graph once you know his
+        # name. Runs regardless of whether `hits` found anything, and
+        # merged in deduplicated by entity name.
+        try:
+            named_entities = await store.find_entities_mentioned_in_text(job_id, message)
+            if named_entities:
+                direct_facts = await store.expand_relations_for_entities(job_id, named_entities)
+                # Union rather than "first source wins" -- both sources
+                # query the same (e)-[r:RELATION]-(other) shape for a
+                # found entity, so in practice neither is ever strictly
+                # richer, but merging relation lists instead of keeping
+                # only whichever list showed up first is what actually
+                # guarantees no real fact gets dropped just because the
+                # entity happened to also turn up via a chunk.
+                by_entity = {f["entity"]: f for f in graph_facts}
+                for fact in direct_facts:
+                    existing = by_entity.get(fact["entity"])
+                    if existing is None:
+                        graph_facts.append(fact)
+                        by_entity[fact["entity"]] = fact
+                    else:
+                        existing_related = existing.setdefault("related", [])
+                        for rel in fact.get("related", []):
+                            if rel not in existing_related:
+                                existing_related.append(rel)
+        except Exception:
+            logger.exception("Direct entity-name graph lookup failed for job %s", job_id)
     else:
         logger.warning("Neo4j unreachable for job %s (%s) — trying local vector fallback.", job_id, neo4j_detail)
 
@@ -151,7 +198,7 @@ async def _answer_question_impl(
         if hits:
             degraded = True
 
-    if not hits:
+    if not hits and not graph_facts:
         if not neo4j_reachable:
             return ChatResponse(
                 answer=f"The knowledge graph is currently unreachable: {neo4j_detail} "
@@ -166,10 +213,12 @@ async def _answer_question_impl(
             citations=[], uncertain=True,
         )
 
-    context_parts = ["--- Retrieved passages ---"]
-    for h in hits:
-        loc = f"{h['source_file']}" + (f" p.{h['page']}" if h.get("page") else "")
-        context_parts.append(f"[{loc}] (score={h['score']:.2f})\n{h['text']}")
+    context_parts = []
+    if hits:
+        context_parts.append("--- Retrieved passages ---")
+        for h in hits:
+            loc = f"{h['source_file']}" + (f" p.{h['page']}" if h.get("page") else "")
+            context_parts.append(f"[{loc}] (score={h['score']:.2f})\n{h['text']}")
 
     if graph_facts:
         context_parts.append("\n--- Related graph facts ---")

@@ -244,6 +244,56 @@ class Neo4jStore:
             )
             return [record.data() async for record in result]
 
+    async def find_entities_mentioned_in_text(self, job_id: str, text: str) -> list[str]:
+        """Reverse of the chunk->entity MENTIONS linking done in
+        ingest_job_graph (there: `WHERE ch.text CONTAINS e.name`) -- here
+        applied to an arbitrary piece of text (a chat question) instead of
+        a chunk, so a question like "what is John Smith's mother's name"
+        resolves directly to the John Smith Entity node. See
+        expand_relations_for_entities for why this matters: chunk vector
+        search can easily miss the one short passage that actually
+        mentions a specific person."""
+        settings = self._settings
+        async with self._driver.session(database=settings.neo4j_database) as session:
+            result = await session.run(
+                """
+                MATCH (e:Entity {job_id: $job_id})
+                WHERE $text CONTAINS e.name
+                RETURN DISTINCT e.name AS name
+                """,
+                job_id=job_id, text=text,
+            )
+            return [record["name"] async for record in result]
+
+    async def expand_relations_for_entities(self, job_id: str, entity_names: list[str]) -> list[dict]:
+        """Direct 1-hop graph expansion seeded by entity name instead of by
+        retrieved chunk (compare expand_entities_for_chunks). Chat's chunk
+        vector search ranks whole text passages by semantic similarity to
+        the question -- for a short, information-dense passage (a
+        passport's few lines of text) competing against everything else in
+        the job, the one relevant chunk can easily miss the top-k cut even
+        though it's an easy substring match against the question itself
+        once you know the person's name. This bypasses that entirely: given
+        a known entity name, just ask the graph for its relations directly.
+        Same return shape as expand_entities_for_chunks so callers can
+        merge the two lists."""
+        if not entity_names:
+            return []
+        settings = self._settings
+        async with self._driver.session(database=settings.neo4j_database) as session:
+            result = await session.run(
+                """
+                MATCH (e:Entity {job_id: $job_id})
+                WHERE e.name IN $entity_names
+                OPTIONAL MATCH (e)-[r:RELATION]-(other:Entity {job_id: $job_id})
+                RETURN DISTINCT e.name AS entity, e.type AS type,
+                       collect(DISTINCT {type: r.type, other: other.name}) AS related
+                LIMIT 30
+                """,
+                job_id=job_id, entity_names=entity_names,
+            )
+            return [record.data() async for record in result]
+
     async def get_full_graph(self, job_id: str) -> tuple[list[dict], list[dict]]:
         settings = self._settings
         async with self._driver.session(database=settings.neo4j_database) as session:
