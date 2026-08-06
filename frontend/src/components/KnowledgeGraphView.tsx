@@ -25,6 +25,34 @@ const TYPE_COLORS: Record<string, string> = {
 };
 const colorFor = (t: string) => TYPE_COLORS[t] ?? "#8fa4bd";
 
+// Coarse relation-type buckets so a connection's *kind* reads at a glance
+// on the canvas itself (color + label), not only via hovering a thin line
+// or opening the detail panel -- family/kinship relations (see
+// prompts.RELATION_SYSTEM) get their own color distinct from business/org
+// relations, everything else stays neutral.
+const KINSHIP_TYPES = new Set([
+  "MOTHER_OF", "FATHER_OF", "PARENT_OF", "CHILD_OF", "SPOUSE_OF", "SIBLING_OF", "GUARDIAN_OF",
+]);
+const BUSINESS_TYPES = new Set([
+  "OWNS", "EMPLOYED_BY", "PAID", "LOCATED_IN", "SUBSIDIARY_OF", "REPORTS_TO", "TRANSACTED_WITH",
+]);
+type EdgeCategory = "kinship" | "business" | "other";
+const EDGE_CATEGORY_COLORS: Record<EdgeCategory, string> = {
+  kinship: "#e879f9", business: "#3ecf8e", other: "#8fa4bd",
+};
+function edgeCategory(relationType: string): EdgeCategory {
+  const t = relationType.toUpperCase();
+  if (KINSHIP_TYPES.has(t)) return "kinship";
+  if (BUSINESS_TYPES.has(t)) return "business";
+  return "other";
+}
+
+// Above this many relations, always-on edge labels would just be visual
+// noise -- fall back to labeling only the edge under the cursor or
+// touching the current selection, same decluttering the node dimming
+// already relies on for busy graphs.
+const LABEL_MAX_EDGES = 60;
+
 const MIN_R = 5;
 const MAX_R = 20;
 
@@ -222,18 +250,42 @@ export function KnowledgeGraphView({ graph, active = true }: { graph: KnowledgeG
       const isHovered = hoveredEdgeRef.current === e;
       const touchesSelected = selected !== null && (e.source === selected || e.target === selected);
       const dim = selected !== null && !touchesSelected;
+      const category = edgeCategory(e.type);
       ctx.strokeStyle = isHovered
         ? "rgba(92,139,255,0.9)"
         : touchesSelected
         ? "rgba(20,184,166,0.85)"
         : dim
         ? "rgba(140,164,189,0.08)"
-        : "rgba(140,164,189,0.25)";
+        : `${EDGE_CATEGORY_COLORS[category]}55`;
       ctx.lineWidth = isHovered || touchesSelected ? 2 : 1;
       ctx.beginPath();
       ctx.moveTo(a.x, a.y);
       ctx.lineTo(b.x, b.y);
       ctx.stroke();
+
+      const showLabel = isHovered || touchesSelected || (!dim && edges.length <= LABEL_MAX_EDGES);
+      if (showLabel) {
+        const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+        ctx.font = "9px 'Space Mono', ui-monospace, monospace";
+        const textW = ctx.measureText(e.type).width;
+        const padX = 5, padY = 2, textH = 9;
+        const rx = mx - textW / 2 - padX, ry = my - textH / 2 - padY;
+        const rw = textW + padX * 2, rh = textH + padY * 2, r = 3;
+        ctx.beginPath();
+        ctx.moveTo(rx + r, ry);
+        ctx.arcTo(rx + rw, ry, rx + rw, ry + rh, r);
+        ctx.arcTo(rx + rw, ry + rh, rx, ry + rh, r);
+        ctx.arcTo(rx, ry + rh, rx, ry, r);
+        ctx.arcTo(rx, ry, rx + rw, ry, r);
+        ctx.closePath();
+        ctx.fillStyle = "rgba(16,13,11,0.88)";
+        ctx.fill();
+        ctx.fillStyle = isHovered ? "#a3c2ff" : touchesSelected ? "#5eead4" : EDGE_CATEGORY_COLORS[category];
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(e.type, mx, my);
+      }
     }
 
     for (const n of nodes) {
@@ -427,6 +479,15 @@ export function KnowledgeGraphView({ graph, active = true }: { graph: KnowledgeG
         {Object.entries(TYPE_COLORS).map(([type, color]) => (
           <span key={type} className="legend-item">
             <span className="legend-dot" style={{ background: color }} /> {type}
+          </span>
+        ))}
+      </div>
+      <div className="graph-legend graph-legend-edges">
+        <span className="legend-item legend-item-label">Connections:</span>
+        {(Object.entries(EDGE_CATEGORY_COLORS) as [EdgeCategory, string][]).map(([cat, color]) => (
+          <span key={cat} className="legend-item">
+            <span className="legend-line" style={{ background: color }} />
+            {cat === "kinship" ? "Family / kinship" : cat === "business" ? "Business / org" : "Other"}
           </span>
         ))}
       </div>
