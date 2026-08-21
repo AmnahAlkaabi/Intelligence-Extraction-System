@@ -64,6 +64,12 @@ class Settings(BaseSettings):
     upload_dir: str = "./data/uploads"
     output_dir: str = "./data/outputs"
     max_upload_mb: int = 500
+    # Persistent, cross-job SQLite library every job's extracted structured
+    # tables get mirrored into (see storage/dataset_library.py) -- kept
+    # OUTSIDE output_dir on purpose, since output_dir/{job_id} is wiped
+    # wholesale by file_store.delete_job_files when a job is deleted, and
+    # a saved dataset should survive that.
+    dataset_library_db_path: str = "./data/dataset_library.db"
 
     # --- Pipeline ---
     chunk_size_tokens: int = 512

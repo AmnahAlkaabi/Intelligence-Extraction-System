@@ -17,11 +17,11 @@ wholesale.
 """
 import json
 import logging
-import re
 import sqlite3
 from pathlib import Path
 
 from app.models.schemas import FileCategory, TableBlock
+from app.storage import tabular
 from app.storage.file_store import job_output_dir
 
 logger = logging.getLogger(__name__)
@@ -42,108 +42,6 @@ def structured_db_path(job_id: str) -> Path:
     return job_output_dir(job_id) / "structured.db"
 
 
-def _sanitize_ident(name: str, fallback: str) -> str:
-    s = re.sub(r"[^0-9a-zA-Z_]", "_", (name or "").strip())
-    s = re.sub(r"_+", "_", s).strip("_")
-    if not s:
-        s = fallback
-    if s[0].isdigit():
-        s = f"_{s}"
-    return s[:60]
-
-
-def _dedupe(names: list[str]) -> list[str]:
-    seen: dict[str, int] = {}
-    out = []
-    for n in names:
-        if n not in seen:
-            seen[n] = 0
-            out.append(n)
-        else:
-            seen[n] += 1
-            out.append(f"{n}_{seen[n]}")
-    return out
-
-
-# Real spreadsheets mark missing values a dozen different ways, not just
-# empty string -- treating these as NULL (instead of the one stray "N/A"
-# forcing an otherwise-numeric column to TEXT for good) is what actually
-# makes SUM()/AVG() work on real-world exports.
-_NULL_SENTINELS = {"", "n/a", "na", "null", "none", "nan", "-", "--", "n.a.", "unknown", "tbd"}
-
-# Presentational noise that doesn't change a number's value: thousands
-# separators, a currency symbol, incidental whitespace.
-_NUMERIC_NOISE_RE = re.compile(r"[,$\s]")
-
-# A column counts as numeric once this fraction of its non-null values
-# parse cleanly -- not literally every value. A handful of genuinely
-# malformed cells (a typo, a stray label) shouldn't force the whole
-# column to TEXT and break aggregate queries on the other 95% that are
-# perfectly good numbers; SQLite's type affinity tolerates the rare
-# leftover string in a numeric-affinity column without error anyway.
-_NUMERIC_TYPE_THRESHOLD = 0.9
-
-
-def _is_null_sentinel(value: str | None) -> bool:
-    return value is None or str(value).strip().lower() in _NULL_SENTINELS
-
-
-def _clean_numeric(value: str) -> str:
-    """Strips presentational formatting so "$1,234.56" / " 1,234 " parse
-    as numbers, and converts accounting-style negatives -- "(250)" -- to
-    "-250". Anything else (a real non-numeric string) is returned as-is
-    and will simply fail int()/float() below, same as before."""
-    s = value.strip()
-    negative = s.startswith("(") and s.endswith(")") and len(s) > 2
-    if negative:
-        s = s[1:-1]
-    s = _NUMERIC_NOISE_RE.sub("", s)
-    return f"-{s}" if negative and s else s
-
-
-def _is_int(v: str) -> bool:
-    try:
-        int(_clean_numeric(v))
-        return True
-    except (ValueError, TypeError):
-        return False
-
-
-def _is_float(v: str) -> bool:
-    try:
-        float(_clean_numeric(v))
-        return True
-    except (ValueError, TypeError):
-        return False
-
-
-def _infer_column_type(values: list[str]) -> str:
-    candidates = [v for v in values if not _is_null_sentinel(v)]
-    if not candidates:
-        return "TEXT"
-    if sum(_is_int(v) for v in candidates) / len(candidates) >= _NUMERIC_TYPE_THRESHOLD:
-        return "INTEGER"
-    if sum(_is_float(v) for v in candidates) / len(candidates) >= _NUMERIC_TYPE_THRESHOLD:
-        return "REAL"
-    return "TEXT"
-
-
-def _coerce_cell(value: str | None, col_type: str):
-    if _is_null_sentinel(value):
-        return None
-    if col_type == "INTEGER":
-        try:
-            return int(_clean_numeric(value))
-        except ValueError:
-            return value
-    if col_type == "REAL":
-        try:
-            return float(_clean_numeric(value))
-        except ValueError:
-            return value
-    return value
-
-
 def write_tables(job_id: str, source_file: str, tables: list[TableBlock], category: FileCategory) -> list[str]:
     """Writes every table this file produced into the job's structured
     SQLite store. Best-effort: callers should treat a failure here as
@@ -154,7 +52,7 @@ def write_tables(job_id: str, source_file: str, tables: list[TableBlock], catego
     asyncio.to_thread, matching how the CSV/Excel/Database parsers
     themselves already offload their own pandas/sqlite3 work.
     """
-    usable = [t for t in tables if t.headers and t.rows]
+    usable = tabular.usable_tables(tables)
     if not usable:
         return []
 
@@ -168,7 +66,7 @@ def write_tables(job_id: str, source_file: str, tables: list[TableBlock], catego
         base = Path(source_file).stem.lower()
         for table in usable:
             name_seed = f"{base}_{table.sheet}" if table.sheet else base
-            base_name = _sanitize_ident(name_seed, "table")
+            base_name = tabular.sanitize_ident(name_seed, "table")
             table_name = base_name
             n = 2
             while table_name in existing:
@@ -176,19 +74,12 @@ def write_tables(job_id: str, source_file: str, tables: list[TableBlock], catego
                 n += 1
             existing.add(table_name)
 
-            columns = _dedupe([_sanitize_ident(h, f"col_{i}") for i, h in enumerate(table.headers)])
-            col_types = [
-                _infer_column_type([row[i] if i < len(row) else "" for row in table.rows])
-                for i in range(len(columns))
-            ]
+            columns, col_types = tabular.build_columns_and_types(table)
             col_defs = ", ".join(f'"{c}" {t}' for c, t in zip(columns, col_types))
             conn.execute(f'CREATE TABLE "{table_name}" ({col_defs})')
 
             placeholders = ", ".join("?" for _ in columns)
-            coerced_rows = [
-                [_coerce_cell(row[i] if i < len(row) else "", col_types[i]) for i in range(len(columns))]
-                for row in table.rows
-            ]
+            coerced_rows = tabular.coerce_rows(table, columns, col_types)
             conn.executemany(f'INSERT INTO "{table_name}" VALUES ({placeholders})', coerced_rows)
 
             conn.execute(

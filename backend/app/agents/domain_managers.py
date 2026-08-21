@@ -22,7 +22,7 @@ from app.llm.client import get_llm_client
 from app.models.schemas import DomainResult, FileCategory, Job
 from app.parsers.router import classify, parse_file
 from app.pipeline.agent_tracker import finish_activity, start_activity
-from app.storage import structured_store
+from app.storage import dataset_library, structured_store
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +49,14 @@ def _structured_lock(job_id: str) -> asyncio.Lock:
         lock = asyncio.Lock()
         _structured_write_locks[job_id] = lock
     return lock
+
+
+# dataset_library.py's SQLite file is shared by every job in this process,
+# not scoped per job like structured.db -- a single process-wide lock
+# (rather than the per-job _structured_write_locks above) is what actually
+# prevents two different jobs' files from racing on the same "_datasets"
+# table at once.
+_library_write_lock = asyncio.Lock()
 
 # Functional agents that only make sense on text-bearing categories.
 _TEXT_CATEGORIES = {
@@ -154,6 +162,24 @@ async def process_file(
             logger.exception("Structured table ingestion failed for %s", file_path)
             doc.warnings.append(
                 "Structured query indexing failed for this file -- chat SQL answers may be incomplete."
+            )
+
+        # Separately, also save these same tables into the persistent
+        # cross-job dataset library (see storage/dataset_library.py) --
+        # unlike the structured-query mirror above, this one is meant to
+        # outlive the job: it's a permanent, browsable/downloadable record
+        # of every extracted structured table, not scratch input for chat.
+        # A failure here is independent of the structured-query mirror
+        # succeeding or failing above -- each is its own best-effort step.
+        try:
+            async with _library_write_lock:
+                await asyncio.to_thread(
+                    dataset_library.save_tables, job.job_id, file_path, structured_tables, doc.category
+                )
+        except Exception:
+            logger.exception("Dataset library save failed for %s", file_path)
+            doc.warnings.append(
+                "Saving this file's tables to the dataset library failed -- they were still indexed for chat."
             )
 
     activity = start_activity(job, "Translator", file_path)

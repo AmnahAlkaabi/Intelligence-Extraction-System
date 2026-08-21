@@ -91,6 +91,23 @@ class TableBlock(BaseModel):
     caption: str | None = None
 
 
+class DatasetRecord(BaseModel):
+    """One saved table in the persistent, cross-job dataset library (see
+    storage/dataset_library.py) -- distinct from TableBlock, which is a
+    single file's in-memory parse result. `columns` is a list of
+    [name, sqlite_type] pairs (e.g. ["amount", "REAL"]), mirroring
+    structured_store.py's manifest format."""
+    dataset_id: str
+    job_id: str
+    source_file: str
+    table_name: str
+    sheet: str | None = None
+    category: str
+    row_count: int
+    columns: list[list[str]]
+    saved_at: str
+
+
 class ParsedDocument(BaseModel):
     """Unified output of every L2 file-type agent."""
     source_file: str
