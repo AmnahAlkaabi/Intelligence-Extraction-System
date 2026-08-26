@@ -9,13 +9,20 @@ keep the two-engine setup as-is instead of adding a third model.
 """
 import logging
 
-from langdetect import LangDetectException, detect
+from langdetect import DetectorFactory, LangDetectException, detect_langs
 
 from app.config import get_settings
 from app.llm.client import get_llm_client
 from app.models.schemas import ParsedDocument
 
 logger = logging.getLogger(__name__)
+
+# langdetect's classifier is otherwise seeded from wall-clock time
+# internally, so the exact same input text can classify differently
+# between two runs/processes. Fixing the seed makes detection
+# reproducible -- necessary for MIN_DETECTION_CONFIDENCE below to be a
+# reliable guard rather than a coin flip.
+DetectorFactory.seed = 0
 
 TRANSLATE_SYSTEM = (
     "You are a precise document translator. Translate the user's text to {target}. "
@@ -29,12 +36,27 @@ TRANSLATE_SYSTEM = (
 _BATCH_CHARS = 4000
 _BLOCK_SEP = "\n<<<BLOCK>>>\n"
 
+# Below this confidence, a detection is treated as "too uncertain to act
+# on" (same as detect() failing outright) rather than committed to.
+# JSON's raw per-record text dump (braces, keys, numbers, punctuation --
+# see json_parser.py) is exactly the kind of input that fools langdetect's
+# n-gram classifier into a low-confidence, sometimes-wrong non-English
+# guess. That silently triggered a full, slow, wholly unnecessary
+# translation pass over already-English content: an 800-record JSON file
+# observed in testing took 20+ minutes translating its ~800KB of record
+# text batch-by-batch before NER/PII/Financial extraction could even
+# start, purely because of one low-confidence misdetection.
+_MIN_DETECTION_CONFIDENCE = 0.9
+
 
 def _detect_language(text: str) -> str | None:
     try:
-        return detect(text)
+        candidates = detect_langs(text)
     except LangDetectException:
         return None
+    if not candidates or candidates[0].prob < _MIN_DETECTION_CONFIDENCE:
+        return None
+    return candidates[0].lang
 
 
 async def translate_document(
