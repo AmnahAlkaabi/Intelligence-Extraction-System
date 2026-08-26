@@ -177,19 +177,56 @@ def _luhn_valid(number: str) -> bool:
     return total % 10 == 0
 
 
+# Luhn alone has a ~10% false-accept rate on an arbitrary digit string
+# (it's a single mod-10 check digit) -- nowhere near enough on its own to
+# call something a credit card. In practice this made ANY dash/space-
+# formatted 13-19 digit ID a coin flip away from a false "CREDIT_CARD"
+# finding: e.g. a UAE Emirates ID (784-YYYY-NNNNNNN-C, already matched
+# correctly below by _find_national_id_findings as EMIRATES_ID) happens
+# to Luhn-check about 1 time in 10, and "784" isn't a real card network
+# prefix at all. Real card numbers are also constrained to a small set of
+# publicly documented Issuer Identification Number (IIN) ranges + length
+# combinations (ISO/IEC 7812-1) -- requiring a candidate to match one of
+# those, in addition to Luhn, is what actually distinguishes a card
+# number from an arbitrary Luhn-valid government/company ID. Ranges below
+# cover the networks in common circulation (Visa, Mastercard, Amex,
+# Diners Club, Discover, JCB, UnionPay); deliberately excludes Maestro,
+# whose publicly documented IIN ranges are broad enough to overlap
+# heavily with non-card numbers and would defeat the point of this filter.
+def _card_iin_plausible(number: str) -> bool:
+    n = len(number)
+    first1, first2, first4 = number[0], number[:2], number[:4]
+    if first1 == "4":
+        return n in (13, 16, 19)  # Visa
+    if n == 16 and (first2 in ("51", "52", "53", "54", "55") or 2221 <= int(first4) <= 2720):
+        return True  # Mastercard
+    if n == 15 and first2 in ("34", "37"):
+        return True  # American Express
+    if n == 14 and (first2 in ("36", "38") or first2 in ("30",) and number[2] in "012345"):
+        return True  # Diners Club
+    if n == 16 and (first4 == "6011" or first2 == "65" or 644 <= int(number[:3]) <= 649
+                     or 622126 <= int(number[:6]) <= 622925):
+        return True  # Discover
+    if n == 16 and 3528 <= int(first4) <= 3589:
+        return True  # JCB
+    if 16 <= n <= 19 and first2 == "62":
+        return True  # UnionPay
+    return False
+
+
 def _find_card_findings(text: str, source_file: str) -> list[PIIFinding]:
     findings = []
     for m in _CARD_CANDIDATE_RE.finditer(text):
         candidate = re.sub(r"[ -]", "", m.group(0))
         if not (13 <= len(candidate) <= 19):
             continue
-        if _luhn_valid(candidate):
+        if _luhn_valid(candidate) and _card_iin_plausible(candidate):
             findings.append(PIIFinding(
                 category="CREDIT_CARD",
                 value_redacted=_redact(candidate),
                 severity="critical",
                 source_file=source_file,
-                location="card number pattern (Luhn-verified)",
+                location="card number pattern (Luhn + issuer-range verified)",
                 detection_method="rules_checksum",
             ))
     return findings
