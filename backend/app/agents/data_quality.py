@@ -135,7 +135,17 @@ def _assess_table(table: TableBlock) -> TableQuality:
             issues.append(f"constant column (every value is '{ok_values[0]}')")
         elif len(ok_values) >= 50 and distinct_ratio <= 0.02:
             issues.append("low-cardinality column (near-constant)")
-        if len(ok_values) >= 10 and type_consistency < 0.85:
+        # >= 3, not >= 10: type_consistency is an exact measurement of
+        # every value actually present in the column, not an estimate
+        # sampled from some larger population -- there's no statistical-
+        # power reason to need a double-digit row count before trusting
+        # it. The old >= 10 floor meant a small (very common for JSON --
+        # test exports, API samples, small datasets) file with an
+        # obviously wrong-typed value in, say, a 4-row column never
+        # surfaced it at all, no matter how blatant. >= 3 still excludes
+        # n=1/2, where a single value makes the ratio purely binary
+        # (0%/50%/100%) and too coarse to be a meaningful signal.
+        if len(ok_values) >= 3 and type_consistency < 0.85:
             issues.append(f"{1 - type_consistency:.0%} of values don't match inferred type '{inferred}'")
 
         columns.append(ColumnQuality(
