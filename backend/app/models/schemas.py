@@ -114,7 +114,7 @@ class ParsedDocument(BaseModel):
     category: FileCategory
     text_blocks: list[TextBlock] = []
     tables: list[TableBlock] = []
-    # Only populated by the CSV/Excel/Database parsers: the same tables as
+    # Only populated by the CSV/Excel/JSON/Database parsers: the same tables as
     # `tables`, but without the 500-row-per-table cap that keeps `tables`
     # small enough to render in the Data Dump tab / export to CSV. Feeds
     # storage/structured_store.py so chat's structured-query SQL branch

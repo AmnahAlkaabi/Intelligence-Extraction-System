@@ -80,8 +80,11 @@ UTF-8/comma; malformed-row recovery instead of hard failure.
 **5. Excel Specialist** — Merged-cell and multi-header table
 reconstruction; formula-cell value resolution.
 
-**6. JSON Specialist** — Deeply nested/irregular schema flattening
-improvements; streaming parse for very large files.
+**6. JSON Specialist** — Streaming parse for very large top-level-array
+files (via `ijson`) and a recursion-depth guard on the flattener shipped;
+remaining scope: irregular/inconsistent per-record schema reconciliation
+across a corpus of files (not just within one file's own key-frequency
+summary).
 
 **7. Office Specialist** — Embedded table/image extraction from DOCX (not
 just running text); PPTX speaker-notes extraction.

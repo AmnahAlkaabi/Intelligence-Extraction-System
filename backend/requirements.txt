@@ -16,3 +16,4 @@
 -r requirements/web.txt
 -r requirements/data.txt
 -r requirements/utils.txt
+-r requirements/test.txt

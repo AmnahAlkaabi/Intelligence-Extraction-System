@@ -44,6 +44,7 @@ _FORMAT_PHRASES: dict[FileCategory, tuple[str, ...]] = {
     FileCategory.EMAIL: ("email", "e-mail", "inbox", "correspondence"),
     FileCategory.EXCEL: ("excel", "workbook", "worksheet", "spreadsheet"),
     FileCategory.CSV: ("csv file", "csv data"),
+    FileCategory.JSON_: ("json file", "json data", ".json"),
     FileCategory.DATABASE: ("database", "sql table", "db table"),
     FileCategory.CODE: ("log file", "source code", "script file"),
     FileCategory.IMAGE: ("scanned image", "screenshot", "photo"),

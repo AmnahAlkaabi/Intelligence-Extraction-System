@@ -2,3 +2,8 @@
 pandas==2.2.3
 openpyxl==3.1.5
 xlrd==2.0.1
+
+# Event-based (non-materializing) JSON parsing -- lets json_parser.py
+# stream a large top-level JSON array item by item instead of loading the
+# whole file into memory with one json.load() call.
+ijson==3.5.1

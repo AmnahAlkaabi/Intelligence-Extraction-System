@@ -1,0 +1,7 @@
+# Test-only dependencies -- deliberately NOT installed by the Docker build
+# (see Dockerfile, which installs each other requirements/*.txt group
+# explicitly but not this one): pytest never runs inside the shipped
+# runtime image, only in local dev / CI, so keeping it out of that image
+# keeps it lean and avoids test-only packages in a production container.
+pytest==8.3.4
+pytest-asyncio==0.25.2

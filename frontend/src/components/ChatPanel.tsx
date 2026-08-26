@@ -67,7 +67,7 @@ export function ChatPanel({ jobId, onMessageSent }: { jobId: string; onMessageSe
           <div key={i} className={`chat-msg chat-msg-${m.role}`}>
             <div className="chat-msg-bubble">
               {m.queryMode === "structured" && (
-                <span className="structured-flag" title="Answered by generating and running real SQL against this job's structured files (CSV/Excel/Database), instead of semantic search.">
+                <span className="structured-flag" title="Answered by generating and running real SQL against this job's structured files (CSV/Excel/JSON/Database), instead of semantic search.">
                   🧮 structured query
                 </span>
               )}

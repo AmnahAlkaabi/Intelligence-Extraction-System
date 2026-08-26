@@ -1,4 +1,4 @@
-"""Per-job SQLite store for structured file data (CSV/Excel/Database
+"""Per-job SQLite store for structured file data (CSV/Excel/JSON/Database
 uploads) -- separate from the capped, all-strings TableBlock preview used
 by the Data Dump tab and its CSV export. That preview is fine for display
 but is a dead end for chat: only its first 20 rows ever reach the vector
@@ -49,7 +49,7 @@ def write_tables(job_id: str, source_file: str, tables: list[TableBlock], catego
     data, same as any other single-agent-step failure in this pipeline).
 
     Synchronous/blocking (plain sqlite3) -- callers must run this via
-    asyncio.to_thread, matching how the CSV/Excel/Database parsers
+    asyncio.to_thread, matching how the CSV/Excel/JSON/Database parsers
     themselves already offload their own pandas/sqlite3 work.
     """
     usable = tabular.usable_tables(tables)

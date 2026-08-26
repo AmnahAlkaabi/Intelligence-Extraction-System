@@ -30,8 +30,12 @@ logger = logging.getLogger(__name__)
 # structured-query SQLite store (see storage/structured_store.py) -- not
 # every category has TableBlocks, and the ones that don't (PDF, email,
 # etc) never populate doc.tables anyway, so this is just an early filter
-# rather than a hard requirement.
-_STRUCTURED_CATEGORIES = {FileCategory.CSV, FileCategory.EXCEL, FileCategory.DATABASE}
+# rather than a hard requirement. JSON_ is included because json_parser.py
+# now builds the same headers/rows TableBlock shape CSV/Excel do (a
+# flattened preview, plus full_tables for anything past the preview cap)
+# -- without it here, chat's text-to-SQL branch had zero support for JSON
+# uploads even though the parser already produced queryable tables.
+_STRUCTURED_CATEGORIES = {FileCategory.CSV, FileCategory.EXCEL, FileCategory.DATABASE, FileCategory.JSON_}
 
 # One lock per job serializes structured-store writes for that job only
 # -- files within a job parse concurrently (MAX_PARALLEL_FILES), and two

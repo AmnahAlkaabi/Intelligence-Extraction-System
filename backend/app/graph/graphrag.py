@@ -55,7 +55,7 @@ caller which backend actually answered when this happened.
 
 Before any of that, a question that looks quantitative (see
 structured_query.looks_quantitative) and whose job has structured files
-(CSV/Excel/Database) gets one attempt at a different strategy entirely:
+(CSV/Excel/JSON/Database) gets one attempt at a different strategy entirely:
 generate and run real SQL against those files' actual typed data (see
 structured_query.py), instead of embedding-similarity search over a
 20-row text preview. That branch fails closed -- no structured tables, an

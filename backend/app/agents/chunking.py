@@ -6,7 +6,7 @@ dependency; token counts here are word-count approximations.
 """
 from app.config import get_settings
 from app.embeddings.bge import get_embedder
-from app.models.schemas import Chunk, ParsedDocument
+from app.models.schemas import Chunk, FileCategory, ParsedDocument
 
 
 def _split_into_chunks(text: str, size: int, overlap: int) -> list[str]:
@@ -36,12 +36,23 @@ async def chunk_and_embed(doc: ParsedDocument) -> list[Chunk]:
         for piece in _split_into_chunks(block.text, settings.chunk_size_tokens, settings.chunk_overlap_tokens):
             raw_chunks.append(Chunk(source_file=doc.source_file, text=piece, page=block.page, category=doc.category))
 
-    for table in doc.tables:
-        if table.rows:
-            preview = ", ".join(table.headers) + "\n" + "\n".join(
-                " | ".join(row) for row in table.rows[:20]
-            )
-            raw_chunks.append(Chunk(source_file=doc.source_file, text=preview, page=table.page, category=doc.category))
+    # JSON's text_blocks above already carry each record's full raw
+    # content (json_parser.py dumps one text_block per record, which is
+    # also what NER/PII/Financial extraction reads via doc.full_text()) --
+    # embedding doc.tables' flattened preview here too would re-embed the
+    # same records a second time in a second, lossier format. CSV/Excel
+    # have no such overlap (their text_blocks are just a column-stats
+    # summary, never per-row content), so this table-preview chunk is
+    # their only source of row-level embeddings and stays as-is.
+    if doc.category != FileCategory.JSON_:
+        for table in doc.tables:
+            if table.rows:
+                preview = ", ".join(table.headers) + "\n" + "\n".join(
+                    " | ".join(row) for row in table.rows[:20]
+                )
+                raw_chunks.append(
+                    Chunk(source_file=doc.source_file, text=preview, page=table.page, category=doc.category)
+                )
 
     if not raw_chunks:
         return []

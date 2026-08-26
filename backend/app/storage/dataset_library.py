@@ -6,7 +6,7 @@ that whole directory tree) -- it exists purely as scratch input for chat's
 text-to-SQL branch during that one job's lifetime. This module is the
 opposite: a single SQLite file OUTSIDE any job's output directory, at
 settings.dataset_library_db_path, that every job's extracted structured
-tables (CSV/Excel/Database) get mirrored into and that nothing ever cleans
+tables (CSV/Excel/JSON/Database) get mirrored into and that nothing ever cleans
 up automatically -- a dataset saved here survives its source job being
 deleted, a backend restart, or the job's own structured.db scratch file
 being wiped.

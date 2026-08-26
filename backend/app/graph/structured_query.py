@@ -1,6 +1,6 @@
 """Structured Query -- text-to-SQL branch for chat questions that are
 better answered by running an actual query against a job's structured
-files (CSV/Excel/SQLite) than by semantic retrieval over embedded text
+files (CSV/Excel/JSON/SQLite) than by semantic retrieval over embedded text
 chunks. See storage/structured_store.py for how the underlying per-job
 SQLite database gets populated at ingestion time.
 
