@@ -117,16 +117,30 @@ def save_tables(job_id: str, source_file: str, tables: list[TableBlock], categor
     return saved_ids
 
 
-def list_datasets() -> list[DatasetRecord]:
+def list_datasets(job_id: str | None = None) -> list[DatasetRecord]:
+    """job_id=None (the default) lists every dataset in the whole library,
+    across every job -- what the /datasets browse routes use. Passing a
+    job_id narrows to just that job's saved tables, which is what the Data
+    Dump tab's schema catalog needs (see agents/schema_catalog.py):
+    grouping same-shape tables into a UNION view only makes sense within
+    the set of files actually uploaded together in one job, not across
+    every job that ever ran through this deployment."""
     if not library_db_path().exists():
         return []
     conn = sqlite3.connect(f"file:{library_db_path()}?mode=ro", uri=True)
     try:
         conn.execute("PRAGMA busy_timeout = 5000")
-        rows = conn.execute(
-            'SELECT dataset_id, job_id, source_file, table_name, sheet, category, row_count, columns_json, saved_at '
-            'FROM "_datasets" ORDER BY saved_at DESC'
-        ).fetchall()
+        if job_id is None:
+            rows = conn.execute(
+                'SELECT dataset_id, job_id, source_file, table_name, sheet, category, row_count, columns_json, saved_at '
+                'FROM "_datasets" ORDER BY saved_at DESC'
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                'SELECT dataset_id, job_id, source_file, table_name, sheet, category, row_count, columns_json, saved_at '
+                'FROM "_datasets" WHERE job_id = ? ORDER BY saved_at DESC',
+                (job_id,),
+            ).fetchall()
     except sqlite3.OperationalError:
         return []
     finally:

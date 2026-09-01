@@ -7,6 +7,7 @@ import pypdfium2 as pdfium
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, Response
 
+from app.agents.schema_catalog import build_schema_catalog
 from app.models.schemas import (
     BIReport,
     ComplianceReport,
@@ -16,9 +17,11 @@ from app.models.schemas import (
     KnowledgeGraphExport,
     SourceDocSummary,
     SourceTargetMapping,
+    StructuredDataCatalog,
     TableBlock,
 )
 from app.pipeline.job_manager import get_job_manager
+from app.storage import dataset_library
 from app.storage.file_store import job_output_dir, job_upload_dir
 
 logger = logging.getLogger(__name__)
@@ -95,6 +98,24 @@ async def get_data_dump_documents(job_id: str) -> list[SourceDocSummary]:
             text_excerpt=r.chunks[0].text[:280] if r.chunks else None,
         ))
     return out
+
+
+@router.get("/outputs/{job_id}/data-dump/schema", response_model=StructuredDataCatalog)
+async def get_data_dump_schema(job_id: str) -> StructuredDataCatalog:
+    """Where this job's structured (CSV/Excel/Database) tables actually
+    live on disk, plus an Oracle-DESC-style schema catalog with
+    same-shape tables UNIONed into one combined structure (see
+    agents/schema_catalog.py). Reads storage/dataset_library.py's
+    persistent library scoped to just this job's saved tables -- not
+    structured_store.py's per-job scratch store, which is chat's SQL
+    input and gets deleted with the job rather than being the durable
+    "where is this saved" record."""
+    _completed_job(job_id)
+    datasets = dataset_library.list_datasets(job_id=job_id)
+    return StructuredDataCatalog(
+        library_path=str(dataset_library.library_db_path()),
+        groups=build_schema_catalog(datasets),
+    )
 
 
 @router.get("/outputs/{job_id}/files/preview/{filename}")

@@ -146,7 +146,7 @@ def _target_file(proposed_table_name: str) -> str:
     return f"{slug or 'table'}.csv"
 
 
-def _classify_entity(standardized_columns: set[str]) -> str | None:
+def classify_entity(standardized_columns: set[str]) -> str | None:
     best_type, best_score = None, 0
     for entity, keywords in _ENTITY_ARCHETYPES.items():
         score = sum(1 for col in standardized_columns for kw in keywords if kw in col)
@@ -296,7 +296,7 @@ def build_bi_tables(results: list[DomainResult]) -> list[BITableProposal]:
                 # record". Falls back to the old descriptive name when the
                 # child side isn't a clear match for anything recognized.
                 child_cols = {c.target_column for c in columns if c.source_file == child_file}
-                entity = _classify_entity(child_cols)
+                entity = classify_entity(child_cols)
                 name = entity or f"{child_name} enriched with {parent_name}"
 
                 proposals.append(BITableProposal(
@@ -321,7 +321,7 @@ def build_bi_tables(results: list[DomainResult]) -> list[BITableProposal]:
             continue
         rule = f"Direct load from {_basename(result.source_file)} -- standardized column names, no join."
         columns = _table_columns(result.source_file, label, table, rule, dq_lookup)
-        entity = _classify_entity({c.target_column for c in columns})
+        entity = classify_entity({c.target_column for c in columns})
         name = entity or _short_name(result.source_file, table)
         proposals.append(BITableProposal(
             name=name,

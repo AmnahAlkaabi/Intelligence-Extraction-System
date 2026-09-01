@@ -104,6 +104,18 @@ export interface BITableProposal {
   target_file: string;
 }
 
+export interface FileGroup {
+  category: string;
+  member_files: string[];
+  file_count: number;
+  entities: number;
+  relations: number;
+  pii_findings: number;
+  financial_facts: number;
+  tables: number;
+  chunks: number;
+}
+
 export interface BIReport {
   executive_summary: string;
   key_entities: string[];
@@ -112,6 +124,7 @@ export interface BIReport {
   market_signals: string[];
   corpus_overview: BusinessIndex[];
   file_breakdown: FileStats[];
+  file_groups: FileGroup[];
   business_use_cases: BITableProposal[];
   data_quality: DataQuality[];
 }
@@ -170,6 +183,26 @@ export interface TableBlock {
 export interface DataDumpTable extends TableBlock {
   source_file: string;
   category: FileCategory;
+}
+
+export interface OracleSchemaColumn {
+  name: string;
+  oracle_type: string;
+}
+
+export interface OracleSchemaGroup {
+  group_name: string;
+  columns: OracleSchemaColumn[];
+  member_tables: string[];
+  member_files: string[];
+  row_count: number;
+  combined: boolean;
+  union_sql?: string | null;
+}
+
+export interface StructuredDataCatalog {
+  library_path: string;
+  groups: OracleSchemaGroup[];
 }
 
 export interface SourceDocSummary {

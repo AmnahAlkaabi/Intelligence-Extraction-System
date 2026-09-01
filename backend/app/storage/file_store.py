@@ -121,12 +121,23 @@ def write_markdown_report(job_id: str, output: SynthesisOutput) -> str:
         lines.append(f"- **{idx.name}: {idx.value}** — {idx.basis}{sources_str}")
     lines.append("")
     lines += ["### File-by-File Breakdown", "",
-              "| File | Category | Entities | Relations | PII | Financial Facts | Tables | Chunks |",
-              "|---|---|---|---|---|---|---|---|"]
+              "| File | Category | Description | Entities | Relations | PII | Financial Facts | Tables | Chunks |",
+              "|---|---|---|---|---|---|---|---|---|"]
     for fs in bi.file_breakdown:
-        lines.append(f"| {fs.source_file} | {fs.category} | {fs.entities} | {fs.relations} | "
+        description = (fs.summary or "").replace("|", "\\|").replace("\n", " ")
+        lines.append(f"| {fs.source_file} | {fs.category} | {description} | {fs.entities} | {fs.relations} | "
                       f"{fs.pii_findings} | {fs.financial_facts} | {fs.tables} | {fs.chunks} |")
     lines.append("")
+
+    if bi.file_groups:
+        lines += ["### Combined Simple Files",
+                   "Files that yielded no entities, relations, PII findings, financial facts, or tables on "
+                   "their own were combined by category into one summary row each, rather than listing every "
+                   "near-identical \"nothing found\" file individually.", ""]
+        for g in bi.file_groups:
+            lines.append(f"- **{g.category}** ({g.file_count} files combined): "
+                          f"{', '.join(g.member_files)}")
+        lines.append("")
 
     lines += ["### Quality Check Stats",
               "Deterministic per-file quality assessment (Validator agent) -- for tabular files, every row of "

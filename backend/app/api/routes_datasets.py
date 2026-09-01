@@ -19,8 +19,8 @@ router = APIRouter(prefix="/datasets", tags=["datasets"])
 
 
 @router.get("", response_model=list[DatasetRecord])
-async def list_datasets() -> list[DatasetRecord]:
-    return dataset_library.list_datasets()
+async def list_datasets(job_id: str | None = Query(None)) -> list[DatasetRecord]:
+    return dataset_library.list_datasets(job_id=job_id)
 
 
 @router.get("/{dataset_id}", response_model=DatasetRecord)

@@ -108,6 +108,58 @@ class DatasetRecord(BaseModel):
     saved_at: str
 
 
+class OracleSchemaColumn(BaseModel):
+    """One column of an OracleSchemaGroup, rendered Oracle-DESC-style --
+    UPPER_SNAKE_CASE name, Oracle datatype name (VARCHAR2/NUMBER) instead
+    of the underlying SQLite storage class (TEXT/INTEGER/REAL)."""
+    name: str
+    oracle_type: str
+
+
+class OracleSchemaGroup(BaseModel):
+    """One entry in the Data Dump tab's structured-data schema catalog
+    (see agents/schema_catalog.py) -- either a single saved table, or
+    several tables that share the exact same standardized column set
+    UNIONed together into one combined structure. `member_tables` are the
+    real table names inside the persistent dataset library (see
+    storage/dataset_library.py); `member_files` are the source files they
+    came from, so the UI can show what got combined."""
+    group_name: str
+    columns: list[OracleSchemaColumn]
+    member_tables: list[str]
+    member_files: list[str]
+    row_count: int
+    combined: bool
+    union_sql: str | None = None
+
+
+class StructuredDataCatalog(BaseModel):
+    """Where a job's structured data actually lives (the persistent
+    dataset library's file path) plus its schema catalog -- what the Data
+    Dump tab's new "structured data location" section renders."""
+    library_path: str
+    groups: list[OracleSchemaGroup]
+
+
+class FileGroup(BaseModel):
+    """One row of the High Level Analysis tab's "combined simple files"
+    section (see agents/synthesizer.compute_file_groups) -- several files
+    of the same category that individually yielded no extraction signal
+    (zero entities/relations/PII/financial facts/tables) collapsed into
+    one summary row instead of cluttering the file-by-file breakdown with
+    N near-identical "nothing found" entries. member_files names exactly
+    what was combined."""
+    category: str
+    member_files: list[str]
+    file_count: int
+    entities: int
+    relations: int
+    pii_findings: int
+    financial_facts: int
+    tables: int
+    chunks: int
+
+
 class ParsedDocument(BaseModel):
     """Unified output of every L2 file-type agent."""
     source_file: str
@@ -337,7 +389,13 @@ class BIReport(BaseModel):
     risks: list[str] = []
     market_signals: list[str] = []
     corpus_overview: list[BusinessIndex] = []      # "what's in the dump" -- corpus-level KPIs
+    # Files that yielded real extraction signal (at least one entity/
+    # relation/PII finding/financial fact/table) -- each still gets its
+    # own row. Files with NONE of those are pulled out into file_groups
+    # instead of cluttering this list with near-identical "nothing found"
+    # entries (see agents/synthesizer.compute_file_groups).
     file_breakdown: list[FileStats] = []           # table/file-wise info for each file
+    file_groups: list[FileGroup] = []              # same-category "simple" files combined into one row
     business_use_cases: list[BITableProposal] = []  # proposed BI-layer tables
     data_quality: list[DataQuality] = []           # quality check stats (per-file Validator output)
 

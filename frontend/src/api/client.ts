@@ -1,4 +1,4 @@
-import type { ChatMessage, ChatResponse, DataDumpTable, Job, SourceDocSummary } from "./types";
+import type { ChatMessage, ChatResponse, DataDumpTable, Job, SourceDocSummary, StructuredDataCatalog } from "./types";
 
 const BASE = "/api";
 
@@ -67,6 +67,10 @@ export async function getDataDumpTables(jobId: string): Promise<DataDumpTable[]>
 
 export async function getDataDumpDocuments(jobId: string): Promise<SourceDocSummary[]> {
   return req<SourceDocSummary[]>(`/outputs/${jobId}/data-dump/documents`);
+}
+
+export async function getDataDumpSchema(jobId: string): Promise<StructuredDataCatalog> {
+  return req<StructuredDataCatalog>(`/outputs/${jobId}/data-dump/schema`);
 }
 
 export function artifactUrl(jobId: string, artifact: string): string {

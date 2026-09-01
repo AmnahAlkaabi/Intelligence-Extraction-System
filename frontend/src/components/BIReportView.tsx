@@ -95,7 +95,7 @@ export function BIReportView({ report }: { report: BIReport }) {
         <table className="data-table">
           <thead>
             <tr>
-              <th>File</th><th>Category</th><th>Entities</th><th>Relations</th>
+              <th>File</th><th>Category</th><th>Description</th><th>Entities</th><th>Relations</th>
               <th>PII</th><th>Financial Facts</th><th>Tables</th><th>Chunks</th>
             </tr>
           </thead>
@@ -104,6 +104,7 @@ export function BIReportView({ report }: { report: BIReport }) {
               <tr key={fs.source_file}>
                 <td className="mono small" title={fs.source_file}>{fs.source_file.split("/").pop()}</td>
                 <td className="small">{fs.category}</td>
+                <td className="small file-description">{fs.summary || <span className="muted">No summary available.</span>}</td>
                 <td>{fs.entities}</td>
                 <td>{fs.relations}</td>
                 <td>{fs.pii_findings}</td>
@@ -116,6 +117,30 @@ export function BIReportView({ report }: { report: BIReport }) {
         </table>
         {report.file_breakdown.length === 0 && <p className="muted">No files processed.</p>}
       </div>
+
+      {report.file_groups.length > 0 && (
+        <>
+          <h3 className="section-block-title">Combined Simple Files</h3>
+          <p className="muted small" style={{ marginTop: -6, marginBottom: 12 }}>
+            Files that yielded no entities, relations, PII, financial facts, or tables on their own are grouped
+            by type into one row instead of listing every near-identical "nothing found" file separately.
+          </p>
+          <div className="file-group-combined-list">
+            {report.file_groups.map((g) => (
+              <div className="report-card file-group-combined-card" key={g.category}>
+                <div className="file-group-combined-head">
+                  <span className="dtype-chip">{g.category}</span>
+                  <span className="schema-combined-badge">{g.file_count} files combined</span>
+                  {g.chunks > 0 && <span className="muted small">{g.chunks} chunks indexed</span>}
+                </div>
+                <p className="small" style={{ margin: "8px 0 0" }}>
+                  <strong>Combined files:</strong> {g.member_files.map((f) => f.split("/").pop()).join(", ")}
+                </p>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
 
       <h3 className="section-block-title">Quality Check Stats</h3>
       {report.data_quality.length === 0 && <p className="muted">No files assessed.</p>}

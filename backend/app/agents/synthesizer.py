@@ -16,6 +16,7 @@ from app.models.schemas import (
     DataDump,
     DomainResult,
     Entity,
+    FileGroup,
     FileStats,
     Job,
     KnowledgeGraphExport,
@@ -250,6 +251,55 @@ def compute_file_breakdown(results: list[DomainResult]) -> list[FileStats]:
     ]
 
 
+def _is_simple(stats: FileStats) -> bool:
+    """No entities, relations, PII findings, financial facts, or tables --
+    literally nothing for the file-by-file breakdown to show about this
+    file beyond its name. (chunks is deliberately excluded: even a
+    "simple" file still gets indexed for chat, that's not a sign it had
+    distinguishing content.)"""
+    return (stats.entities == 0 and stats.relations == 0 and stats.pii_findings == 0
+            and stats.financial_facts == 0 and stats.tables == 0)
+
+
+def compute_file_groups(file_breakdown: list[FileStats]) -> tuple[list[FileStats], list[FileGroup]]:
+    """Splits a full file_breakdown into (files still listed individually,
+    combined groups) for the High Level Analysis tab. A file with zero
+    extraction signal (see _is_simple) carries no distinguishing
+    information worth its own row -- once 2+ such files share a category,
+    they're collapsed into one FileGroup that names exactly which files
+    were combined, rather than the table filling up with near-identical
+    "nothing found" rows for e.g. a dozen empty log files. A single simple
+    file has nothing to combine WITH, so it's left as an ordinary row --
+    "combined" implies 2 or more.
+    """
+    simple_by_category: dict[str, list[FileStats]] = {}
+    individual: list[FileStats] = []
+    for stats in file_breakdown:
+        if _is_simple(stats):
+            simple_by_category.setdefault(stats.category, []).append(stats)
+        else:
+            individual.append(stats)
+
+    groups: list[FileGroup] = []
+    for category, members in simple_by_category.items():
+        if len(members) < 2:
+            individual.extend(members)
+            continue
+        groups.append(FileGroup(
+            category=category,
+            member_files=[m.source_file for m in members],
+            file_count=len(members),
+            entities=sum(m.entities for m in members),
+            relations=sum(m.relations for m in members),
+            pii_findings=sum(m.pii_findings for m in members),
+            financial_facts=sum(m.financial_facts for m in members),
+            tables=sum(m.tables for m in members),
+            chunks=sum(m.chunks for m in members),
+        ))
+    groups.sort(key=lambda g: (-g.file_count, g.category))
+    return individual, groups
+
+
 async def synthesize(results: list[DomainResult], skip_llm: bool = False, job: Job | None = None) -> SynthesisOutput:
     """skip_llm: set when the job's preflight check already found the
     synthesis backend unreachable -- skips straight to the fallback report
@@ -312,6 +362,8 @@ async def synthesize(results: list[DomainResult], skip_llm: bool = False, job: J
         corpus_overview = []
         finish_activity(insight_activity, "failed")
 
+    individual_files, file_groups = compute_file_groups(compute_file_breakdown(results))
+
     bi_report = BIReport(
         executive_summary=raw.get("executive_summary") or fallback_summary,
         key_entities=raw.get("key_entities") or [e.name for e in all_entities[:15]],
@@ -319,7 +371,8 @@ async def synthesize(results: list[DomainResult], skip_llm: bool = False, job: J
         risks=raw.get("risks") or [],
         market_signals=raw.get("market_signals") or [],
         corpus_overview=corpus_overview,
-        file_breakdown=compute_file_breakdown(results),
+        file_breakdown=individual_files,
+        file_groups=file_groups,
         business_use_cases=bi_tables,
         data_quality=[r.quality for r in results if r.quality is not None],
     )

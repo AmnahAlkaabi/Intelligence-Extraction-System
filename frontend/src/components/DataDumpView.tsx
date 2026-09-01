@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import type { DataDumpTable, FileCategory, Job, SourceDocSummary } from "../api/types";
-import { artifactUrl, getDataDumpDocuments, getDataDumpTables, sourcePreviewUrl, tableDownloadUrl } from "../api/client";
+import type { DataDumpTable, FileCategory, Job, OracleSchemaGroup, SourceDocSummary, StructuredDataCatalog } from "../api/types";
+import { artifactUrl, getDataDumpDocuments, getDataDumpSchema, getDataDumpTables, sourcePreviewUrl, tableDownloadUrl } from "../api/client";
 import { AgentIcon } from "./AgentIcons";
 import { CATEGORY_AGENT, CATEGORY_LABEL, CATEGORY_ORDER } from "../lib/fileCategories";
 
@@ -89,6 +89,72 @@ function DocCard({ jobId, entry }: { jobId: string; entry: FileEntry }) {
   );
 }
 
+function basenames(paths: string[]): string {
+  return paths.map(basename).join(", ");
+}
+
+function SchemaGroupCard({ group }: { group: OracleSchemaGroup }) {
+  return (
+    <div className={`schema-group${group.combined ? " schema-group-combined" : ""}`}>
+      <div className="schema-group-head">
+        <span className="schema-group-name">{group.group_name}</span>
+        {group.combined && (
+          <span className="schema-combined-badge">{group.member_tables.length} files combined</span>
+        )}
+        <span className="schema-row-count">{group.row_count.toLocaleString()} row{group.row_count === 1 ? "" : "s"}</span>
+      </div>
+      {group.combined && (
+        <p className="schema-combined-note">
+          <strong>Combined from:</strong> {basenames(group.member_files)} — same column shape, UNIONed into one structure.
+        </p>
+      )}
+      <div className="table-scroll">
+        <table className="data-table schema-desc-table">
+          <thead><tr><th>Column Name</th><th>Data Type</th></tr></thead>
+          <tbody>
+            {group.columns.map((c) => (
+              <tr key={c.name}>
+                <td className="mono small">{c.name}</td>
+                <td><span className="dtype-chip">{c.oracle_type}</span></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {group.combined && group.union_sql && (
+        <pre className="schema-union-sql">{group.union_sql}</pre>
+      )}
+    </div>
+  );
+}
+
+function StructuredDataSchemaSection({ jobId }: { jobId: string }) {
+  const [catalog, setCatalog] = useState<StructuredDataCatalog | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    getDataDumpSchema(jobId).then(setCatalog).finally(() => setLoading(false));
+  }, [jobId]);
+
+  if (loading) return <p className="muted">Loading…</p>;
+  if (!catalog || catalog.groups.length === 0) {
+    return <p className="muted">No structured (CSV/Excel/Database) files were part of this job.</p>;
+  }
+
+  return (
+    <div>
+      <div className="schema-location">
+        <span className="schema-location-label">Saved to</span>
+        <span className="schema-location-path">{catalog.library_path}</span>
+      </div>
+      <div className="schema-group-list">
+        {catalog.groups.map((g) => <SchemaGroupCard key={g.group_name + g.member_tables.join(",")} group={g} />)}
+      </div>
+    </div>
+  );
+}
+
 export function DataDumpView({ job }: { job: Job }) {
   const [tables, setTables] = useState<DataDumpTable[]>([]);
   const [docs, setDocs] = useState<SourceDocSummary[]>([]);
@@ -137,6 +203,9 @@ export function DataDumpView({ job }: { job: Job }) {
           </div>
         </section>
       </div>
+
+      <h3 style={{ marginTop: 24 }}>Structured Data Schema</h3>
+      <StructuredDataSchemaSection jobId={job.job_id} />
 
       <h3 style={{ marginTop: 24 }}>By File Type</h3>
       {loading && <p className="muted">Loading…</p>}
