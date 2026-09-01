@@ -160,6 +160,34 @@ class FileGroup(BaseModel):
     chunks: int
 
 
+class OBSCredentialPublic(BaseModel):
+    """One saved OBS (object storage) credential profile, as returned to
+    the frontend -- NEVER includes the actual secret key. secret_key_hint
+    is a display-only masked form (e.g. "a1b2••••••••") built once at save
+    time from the plaintext, not decryptable back from what's stored here;
+    the real encrypted secret only ever lives in storage/obs_settings.py's
+    SQLite file and is decrypted in-process, on demand, by
+    storage/obs_client.py -- it never round-trips through the API."""
+    id: str
+    name: str
+    endpoint: str
+    region: str | None = None
+    bucket: str
+    path_prefix: str = ""
+    access_key: str
+    secret_key_hint: str
+    is_active: bool
+    created_at: str
+    verified_at: str | None = None
+    verified_ok: bool | None = None
+    verified_detail: str | None = None
+
+
+class OBSSettings(BaseModel):
+    enabled: bool
+    credentials: list[OBSCredentialPublic] = []
+
+
 class ParsedDocument(BaseModel):
     """Unified output of every L2 file-type agent."""
     source_file: str

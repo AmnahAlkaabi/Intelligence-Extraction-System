@@ -285,3 +285,39 @@ export interface ChatResponse {
   sql_used?: string | null;
   structured_result?: StructuredQueryResult | null;
 }
+
+export interface OBSCredential {
+  id: string;
+  name: string;
+  endpoint: string;
+  region?: string | null;
+  bucket: string;
+  path_prefix: string;
+  access_key: string;
+  secret_key_hint: string;
+  is_active: boolean;
+  created_at: string;
+  verified_at?: string | null;
+  verified_ok?: boolean | null;
+  verified_detail?: string | null;
+}
+
+export interface OBSSettings {
+  enabled: boolean;
+  credentials: OBSCredential[];
+}
+
+export interface OBSCredentialInput {
+  name: string;
+  endpoint: string;
+  region?: string;
+  bucket: string;
+  path_prefix?: string;
+  access_key: string;
+  secret_key: string;
+}
+
+export interface OBSTestResult {
+  ok: boolean;
+  detail: string;
+}

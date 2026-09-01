@@ -71,6 +71,24 @@ class Settings(BaseSettings):
     # a saved dataset should survive that.
     dataset_library_db_path: str = "./data/dataset_library.db"
 
+    # --- Object storage (OBS) uploads -- optional, opt-in per deployment
+    # via Settings > Storage in the frontend (see storage/obs_settings.py /
+    # storage/obs_client.py). Off by default: this deployment still runs
+    # fully air-gapped without ever touching these. ---
+    obs_settings_db_path: str = "./data/obs_settings.db"
+    # Fernet key encrypting each credential's secret key at rest -- if
+    # unset (the default), one is generated on first use and persisted to
+    # obs_secret_key_path so it survives a restart; a deployment that wants
+    # the key managed externally (e.g. injected from a secrets manager)
+    # can set OBS_ENCRYPTION_KEY directly instead.
+    obs_encryption_key: str | None = None
+    obs_secret_key_path: str = "./data/.obs_secret.key"
+    # Network calls to a possibly-unreachable external bucket must never
+    # hang an upload request -- these bound both the connection test and
+    # the best-effort file mirror.
+    obs_connect_timeout_s: float = 5.0
+    obs_read_timeout_s: float = 15.0
+
     # --- Pipeline ---
     chunk_size_tokens: int = 512
     chunk_overlap_tokens: int = 64

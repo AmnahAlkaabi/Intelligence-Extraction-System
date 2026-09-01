@@ -111,6 +111,7 @@ a { color: var(--accent); text-decoration: none; }
 .main { padding: 32px 34px 80px; }
 .page-narrow { max-width: 720px; margin: 0 auto; }
 .page-wide { max-width: 1180px; margin: 0 auto; }
+.page-eyebrow { font-size: 10.5px; letter-spacing: 1.4px; text-transform: uppercase; color: var(--dim); font-weight: 700; margin-bottom: 8px; }
 .page-title { font-family: var(--font-display); font-weight: 700; font-size: 28px; margin: 0 0 8px; color: var(--text); }
 .mono-id { font-family: var(--font-mono); font-size: 18px; }
 .page-sub { color: var(--muted); line-height: 1.6; margin-bottom: 28px; font-size: 14px; }
@@ -869,3 +870,131 @@ a { color: var(--accent); text-decoration: none; }
   color: var(--text); font-size: 13px;
 }
 .chat-input-row input:focus { outline: none; border-color: var(--accent); }
+
+/* ============ SETTINGS: OBS (object storage) ============ */
+.settings-tabs { display: flex; gap: 22px; border-bottom: 1px solid var(--line); margin-bottom: 24px; }
+.settings-tab {
+  padding: 10px 2px; font-size: 13px; font-weight: 600; color: var(--dim);
+  border-bottom: 2px solid transparent; background: none; border-top: none; border-left: none; border-right: none;
+  cursor: default; margin-bottom: -1px;
+}
+.settings-tab.is-active { color: var(--text); border-bottom-color: var(--accent); cursor: default; }
+
+.settings-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 4px; }
+.settings-card-head h3 { display: flex; align-items: center; gap: 9px; margin: 0 0 5px; }
+.settings-card-head p { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.6; max-width: 54ch; }
+
+.badge-optional {
+  font-size: 9.5px; letter-spacing: 0.6px; text-transform: uppercase; font-weight: 700;
+  color: var(--accent2); background: rgba(85,189,136,0.12); border: 1px solid rgba(85,189,136,0.3);
+  padding: 2px 8px; border-radius: 20px; white-space: nowrap;
+}
+
+.toggle-switch {
+  position: relative; width: 40px; height: 22px; flex-shrink: 0; border-radius: 20px; border: none; padding: 0;
+  cursor: pointer; background: var(--bg4); transition: background .15s;
+}
+.toggle-switch.is-on { background: var(--accent); }
+.toggle-switch-knob {
+  position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%;
+  background: var(--muted); transition: left .15s, background .15s;
+}
+.toggle-switch.is-on .toggle-switch-knob { left: 21px; background: var(--accent-contrast); }
+.toggle-switch:disabled { opacity: 0.5; cursor: not-allowed; }
+.toggle-col { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0; }
+.toggle-state-label { font-size: 11.5px; color: var(--muted); }
+.toggle-state-label strong { color: var(--accent2); }
+
+.air-gap-note {
+  display: flex; gap: 10px; align-items: flex-start; background: var(--bg3); border: 1px solid var(--line);
+  border-radius: 6px; padding: 12px 14px; margin: 18px 0 22px; font-size: 12px; color: var(--muted); line-height: 1.6;
+}
+.air-gap-note .glyph { color: var(--accent); font-size: 14px; flex-shrink: 0; margin-top: 1px; }
+.air-gap-note strong { color: var(--text); }
+
+.settings-sub-head {
+  font-size: 11px; letter-spacing: 0.8px; text-transform: uppercase; color: var(--dim); font-weight: 700;
+  margin: 4px 0 12px;
+}
+
+.profile-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
+.profile-card {
+  display: flex; align-items: center; gap: 14px; background: var(--bg3); border: 1px solid var(--line);
+  border-radius: 7px; padding: 12px 16px; flex-wrap: wrap;
+}
+.profile-card.is-active { border-color: rgba(20,184,166,0.45); background: rgba(20,184,166,0.045); }
+.profile-radio-btn {
+  width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid var(--dim); flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center; background: none; padding: 0; cursor: pointer;
+}
+.profile-card.is-active .profile-radio-btn { border-color: var(--accent); cursor: default; }
+.profile-radio-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+.profile-body { flex: 1; min-width: 200px; }
+.profile-name-row { display: flex; align-items: center; gap: 9px; margin-bottom: 3px; }
+.profile-name { font-weight: 700; font-size: 13.5px; }
+.active-chip {
+  font-size: 9px; letter-spacing: 0.5px; text-transform: uppercase; font-weight: 700; color: var(--accent-contrast);
+  background: var(--accent); padding: 1px 7px; border-radius: 20px;
+}
+.profile-meta {
+  font-family: var(--font-mono); font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; max-width: 100%;
+}
+.profile-status { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--accent2); flex-shrink: 0; white-space: nowrap; }
+.profile-status.is-bad { color: var(--danger); }
+.profile-status.is-untested { color: var(--dim); }
+.profile-status .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.profile-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.icon-btn {
+  min-width: 28px; height: 28px; padding: 0 8px; display: flex; align-items: center; justify-content: center;
+  border-radius: 5px; background: transparent; border: 1px solid var(--line); color: var(--muted); cursor: pointer;
+  font-size: 12px; font-family: var(--font-body);
+}
+.icon-btn:hover { border-color: var(--accent); color: var(--text); }
+.icon-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.icon-btn.danger:hover { border-color: var(--danger); color: var(--danger); }
+
+.add-credential-btn {
+  background: var(--bg3); border: 1px dashed var(--dim); color: var(--muted); border-radius: 7px;
+  padding: 11px 16px; font-size: 12.5px; font-weight: 600; cursor: pointer; width: 100%;
+  display: flex; align-items: center; justify-content: center; gap: 8px; transition: border-color .15s, color .15s;
+}
+.add-credential-btn:hover { border-color: var(--accent); color: var(--text); }
+.add-credential-btn .plus { font-size: 15px; color: var(--accent); }
+
+.obs-form-panel { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 20px; }
+.obs-form-title { font-size: 13px; font-weight: 700; margin: 0 0 16px; }
+.obs-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 16px; }
+.obs-field { display: flex; flex-direction: column; gap: 6px; }
+.obs-field.span-2 { grid-column: 1 / -1; }
+.obs-field label { font-size: 11px; color: var(--muted); font-weight: 600; letter-spacing: 0.2px; }
+.obs-field-hint { font-size: 10.5px; color: var(--dim); font-weight: 400; text-transform: none; letter-spacing: 0; }
+.obs-field input {
+  background: var(--bg); border: 1px solid var(--line); border-radius: 5px; padding: 9px 11px;
+  color: var(--text); font-size: 13px; font-family: var(--font-mono); width: 100%;
+}
+.obs-field input::placeholder { color: var(--dim); font-family: var(--font-body); }
+.obs-field input:focus { outline: none; border-color: var(--accent); }
+.secret-input-wrap { position: relative; }
+.secret-input-wrap input { padding-right: 66px; letter-spacing: 1px; }
+.reveal-btn {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  background: var(--bg3); border: 1px solid var(--line); color: var(--muted); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.4px; font-weight: 700; padding: 4px 8px; border-radius: 4px; cursor: pointer;
+}
+
+.form-actions { display: flex; align-items: center; gap: 10px; margin-top: 18px; flex-wrap: wrap; }
+.btn-test {
+  background: var(--bg3); color: var(--kimi); border: 1px solid rgba(168,146,232,0.35); padding: 9px 16px;
+  border-radius: 6px; font-size: 13px; cursor: pointer; font-weight: 600; display: flex; align-items: center; gap: 7px;
+}
+.btn-test:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.field-security-note {
+  display: flex; gap: 8px; align-items: flex-start; font-size: 11px; color: var(--dim); margin-top: 16px; line-height: 1.6;
+}
+
+.obs-inline-error {
+  background: rgba(226,104,92,0.08); border: 1px solid rgba(226,104,92,0.3); color: #f2a89e;
+  padding: 8px 12px; border-radius: 5px; margin-top: 14px; font-size: 12px;
+}
