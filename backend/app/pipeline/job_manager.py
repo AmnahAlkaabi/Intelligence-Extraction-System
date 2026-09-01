@@ -96,7 +96,16 @@ class JobManager:
             FileProgress(filename=fp, category=classify(fp), status=JobStatus.QUEUED) for fp in file_paths
         ])
         self._jobs[job.job_id] = job
-        write_job_state(job)
+        # The in-memory registry entry above is what actually matters for
+        # this request to succeed -- a disk hiccup snapshotting it shouldn't
+        # fail the upload outright (the job is real and usable either way
+        # for the rest of this process's lifetime; it just won't survive a
+        # restart until a later touch() call succeeds in writing it).
+        try:
+            write_job_state(job)
+        except Exception:
+            logger.exception("Failed to persist initial state for job %s -- it exists in memory but "
+                              "won't survive a restart until a later write succeeds.", job.job_id)
         return job
 
     def get_job(self, job_id: str) -> Job | None:
@@ -413,7 +422,20 @@ class JobManager:
         # is offloaded to a thread rather than blocking the event loop --
         # and with it, every other job's progress and every API request --
         # for the duration of the write.
-        await asyncio.to_thread(write_job_state, job)
+        #
+        # The write itself is best-effort: touch() is called from many
+        # places, several NOT already inside a try/except (e.g. right
+        # after _process_one's own try/except returns). A transient I/O
+        # failure here (disk full, a container restart landing mid-write)
+        # must not propagate and take down an otherwise-healthy job/batch
+        # -- self._jobs already holds the correct in-memory state
+        # regardless of whether the disk snapshot succeeded, and the next
+        # touch() call will retry the write.
+        try:
+            await asyncio.to_thread(write_job_state, job)
+        except Exception:
+            logger.exception("Failed to persist state for job %s -- in-memory state is still correct; "
+                              "will retry on the next update.", job.job_id)
 
 
 def _summarize_batch(batch_number: int, batch: list[RankedFile], results: list[DomainResult]) -> BatchSummary:

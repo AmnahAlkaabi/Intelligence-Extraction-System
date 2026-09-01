@@ -8,6 +8,7 @@ import csv
 import io
 import json
 import logging
+import os
 import shutil
 from pathlib import Path
 
@@ -64,9 +65,26 @@ def write_job_state(job: Job) -> None:
     activity, and -- once complete -- the full result) to disk on every
     meaningful change, so job history survives a backend restart instead
     of living only in the in-memory registry.
+
+    Writes to a temp file in the same directory and atomically renames it
+    over the real path (os.replace, atomic on POSIX) rather than writing
+    the final path directly. Path.write_text() truncates the target
+    before writing -- if the process is killed mid-write (a container
+    restart racing a job's completion is exactly this: pulling new code
+    requires restarting the backend, and this function fires on nearly
+    every state change), the OLD, previously-good content is already gone
+    and the new content is incomplete, leaving a job_state.json that
+    fails to parse. load_all_job_states() already catches that per-file
+    and skips it (so one bad file can't take down startup) -- but "skip"
+    here means the job silently vanishes from history with nothing louder
+    than a startup log line. A rename either lands the complete new file
+    or leaves the old one untouched; there's no truncated-partial state
+    for a crash to land in.
     """
     path = job_output_dir(job.job_id) / "job_state.json"
-    path.write_text(job.model_dump_json(), encoding="utf-8")
+    tmp_path = path.with_suffix(path.suffix + f".tmp{os.getpid()}")
+    tmp_path.write_text(job.model_dump_json(), encoding="utf-8")
+    os.replace(tmp_path, path)
 
 
 def load_all_job_states() -> list[Job]:
