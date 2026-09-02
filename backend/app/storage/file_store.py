@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import shutil
+import uuid
 from pathlib import Path
 
 from app.config import get_settings
@@ -80,9 +81,23 @@ def write_job_state(job: Job) -> None:
     than a startup log line. A rename either lands the complete new file
     or leaves the old one untouched; there's no truncated-partial state
     for a crash to land in.
+
+    The temp filename must be unique per call, not just per job: touch()
+    fires from several concurrently-running asyncio tasks for the same
+    job (one per file/stage transition, offloaded via asyncio.to_thread),
+    and they all share this one process's pid. A pid-only suffix gives
+    every concurrent writer the SAME tmp path, so one call's write_text()
+    can overwrite another's before either has renamed, and whichever
+    os.replace() runs second finds the file already consumed by the
+    first -- raising FileNotFoundError and silently dropping that
+    snapshot (in-memory state stays correct, but the on-disk history,
+    e.g. agent_activity, falls behind and can jump straight from an early
+    snapshot to whatever the next successful write happens to contain).
+    A uuid suffix gives each call its own tmp file, so concurrent writes
+    can no longer collide on the same path.
     """
     path = job_output_dir(job.job_id) / "job_state.json"
-    tmp_path = path.with_suffix(path.suffix + f".tmp{os.getpid()}")
+    tmp_path = path.with_suffix(path.suffix + f".tmp{uuid.uuid4().hex}")
     tmp_path.write_text(job.model_dump_json(), encoding="utf-8")
     os.replace(tmp_path, path)
 
