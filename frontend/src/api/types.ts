@@ -104,6 +104,18 @@ export interface BITableProposal {
   target_file: string;
 }
 
+export interface FileGroup {
+  category: string;
+  member_files: string[];
+  file_count: number;
+  entities: number;
+  relations: number;
+  pii_findings: number;
+  financial_facts: number;
+  tables: number;
+  chunks: number;
+}
+
 export interface BIReport {
   executive_summary: string;
   key_entities: string[];
@@ -112,6 +124,7 @@ export interface BIReport {
   market_signals: string[];
   corpus_overview: BusinessIndex[];
   file_breakdown: FileStats[];
+  file_groups: FileGroup[];
   business_use_cases: BITableProposal[];
   data_quality: DataQuality[];
 }
@@ -170,6 +183,26 @@ export interface TableBlock {
 export interface DataDumpTable extends TableBlock {
   source_file: string;
   category: FileCategory;
+}
+
+export interface OracleSchemaColumn {
+  name: string;
+  oracle_type: string;
+}
+
+export interface OracleSchemaGroup {
+  group_name: string;
+  columns: OracleSchemaColumn[];
+  member_tables: string[];
+  member_files: string[];
+  row_count: number;
+  combined: boolean;
+  union_sql?: string | null;
+}
+
+export interface StructuredDataCatalog {
+  library_path: string;
+  groups: OracleSchemaGroup[];
 }
 
 export interface SourceDocSummary {
@@ -251,4 +284,40 @@ export interface ChatResponse {
   query_mode?: "graphrag" | "structured";
   sql_used?: string | null;
   structured_result?: StructuredQueryResult | null;
+}
+
+export interface OBSCredential {
+  id: string;
+  name: string;
+  endpoint: string;
+  region?: string | null;
+  bucket: string;
+  path_prefix: string;
+  access_key: string;
+  secret_key_hint: string;
+  is_active: boolean;
+  created_at: string;
+  verified_at?: string | null;
+  verified_ok?: boolean | null;
+  verified_detail?: string | null;
+}
+
+export interface OBSSettings {
+  enabled: boolean;
+  credentials: OBSCredential[];
+}
+
+export interface OBSCredentialInput {
+  name: string;
+  endpoint: string;
+  region?: string;
+  bucket: string;
+  path_prefix?: string;
+  access_key: string;
+  secret_key: string;
+}
+
+export interface OBSTestResult {
+  ok: boolean;
+  detail: string;
 }

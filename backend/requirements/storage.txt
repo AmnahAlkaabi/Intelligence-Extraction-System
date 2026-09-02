@@ -1,0 +1,9 @@
+# Optional object storage (OBS) uploads (see storage/obs_client.py,
+# storage/obs_settings.py) -- off by default, opt-in per deployment via
+# Settings > Storage in the frontend. boto3 talks to any S3-compatible
+# endpoint (OBS, MinIO, Ceph, etc.) via a custom endpoint_url, so no
+# vendor-specific SDK is needed. cryptography (Fernet) encrypts each
+# credential's secret key at rest -- the plaintext secret is never
+# persisted to disk or returned to the frontend after it's first saved.
+boto3==1.35.36
+cryptography==43.0.3

@@ -2,12 +2,14 @@ import { HashRouter, Routes, Route, Link, useLocation } from "react-router-dom";
 import UploadPage from "./pages/Upload";
 import DashboardPage from "./pages/Dashboard";
 import HistoryPage from "./pages/History";
+import SettingsPage from "./pages/Settings";
 import { RobotIcon } from "./components/RobotIcon";
 
 function Rail() {
   const location = useLocation();
   const isUpload = location.pathname === "/";
   const isHistory = location.pathname === "/history";
+  const isSettings = location.pathname === "/settings";
 
   return (
     <aside className="rail">
@@ -27,10 +29,13 @@ function Rail() {
         <Link to="/history" className={`rail-link ${isHistory ? "is-active" : ""}`}>
           <span className="rail-ico">▦</span> Job History
         </Link>
+        <Link to="/settings" className={`rail-link ${isSettings ? "is-active" : ""}`}>
+          <span className="rail-ico">⚙</span> Settings
+        </Link>
       </nav>
       <div className="rail-footer">
-        <div className="rail-footer-tag">◈ Air-gapped deployment</div>
-        <div>No external network calls. All analysis runs on your on-prem Qwen &amp; Kimi2 models.</div>
+        <div className="rail-footer-tag">◈ Air-gapped by default</div>
+        <div>No outbound network calls unless a deployment explicitly opts in under Settings.</div>
       </div>
     </aside>
   );
@@ -46,6 +51,7 @@ export default function App() {
             <Route path="/" element={<UploadPage />} />
             <Route path="/jobs/:jobId" element={<DashboardPage />} />
             <Route path="/history" element={<HistoryPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
           </Routes>
         </main>
       </div>

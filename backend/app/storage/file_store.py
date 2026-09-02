@@ -8,6 +8,7 @@ import csv
 import io
 import json
 import logging
+import os
 import shutil
 from pathlib import Path
 
@@ -64,9 +65,26 @@ def write_job_state(job: Job) -> None:
     activity, and -- once complete -- the full result) to disk on every
     meaningful change, so job history survives a backend restart instead
     of living only in the in-memory registry.
+
+    Writes to a temp file in the same directory and atomically renames it
+    over the real path (os.replace, atomic on POSIX) rather than writing
+    the final path directly. Path.write_text() truncates the target
+    before writing -- if the process is killed mid-write (a container
+    restart racing a job's completion is exactly this: pulling new code
+    requires restarting the backend, and this function fires on nearly
+    every state change), the OLD, previously-good content is already gone
+    and the new content is incomplete, leaving a job_state.json that
+    fails to parse. load_all_job_states() already catches that per-file
+    and skips it (so one bad file can't take down startup) -- but "skip"
+    here means the job silently vanishes from history with nothing louder
+    than a startup log line. A rename either lands the complete new file
+    or leaves the old one untouched; there's no truncated-partial state
+    for a crash to land in.
     """
     path = job_output_dir(job.job_id) / "job_state.json"
-    path.write_text(job.model_dump_json(), encoding="utf-8")
+    tmp_path = path.with_suffix(path.suffix + f".tmp{os.getpid()}")
+    tmp_path.write_text(job.model_dump_json(), encoding="utf-8")
+    os.replace(tmp_path, path)
 
 
 def load_all_job_states() -> list[Job]:
@@ -103,12 +121,23 @@ def write_markdown_report(job_id: str, output: SynthesisOutput) -> str:
         lines.append(f"- **{idx.name}: {idx.value}** — {idx.basis}{sources_str}")
     lines.append("")
     lines += ["### File-by-File Breakdown", "",
-              "| File | Category | Entities | Relations | PII | Financial Facts | Tables | Chunks |",
-              "|---|---|---|---|---|---|---|---|"]
+              "| File | Category | Description | Entities | Relations | PII | Financial Facts | Tables | Chunks |",
+              "|---|---|---|---|---|---|---|---|---|"]
     for fs in bi.file_breakdown:
-        lines.append(f"| {fs.source_file} | {fs.category} | {fs.entities} | {fs.relations} | "
+        description = (fs.summary or "").replace("|", "\\|").replace("\n", " ")
+        lines.append(f"| {fs.source_file} | {fs.category} | {description} | {fs.entities} | {fs.relations} | "
                       f"{fs.pii_findings} | {fs.financial_facts} | {fs.tables} | {fs.chunks} |")
     lines.append("")
+
+    if bi.file_groups:
+        lines += ["### Combined Simple Files",
+                   "Files that yielded no entities, relations, PII findings, financial facts, or tables on "
+                   "their own were combined by category into one summary row each, rather than listing every "
+                   "near-identical \"nothing found\" file individually.", ""]
+        for g in bi.file_groups:
+            lines.append(f"- **{g.category}** ({g.file_count} files combined): "
+                          f"{', '.join(g.member_files)}")
+        lines.append("")
 
     lines += ["### Quality Check Stats",
               "Deterministic per-file quality assessment (Validator agent) -- for tabular files, every row of "

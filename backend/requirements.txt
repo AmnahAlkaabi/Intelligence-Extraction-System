@@ -17,3 +17,4 @@
 -r requirements/data.txt
 -r requirements/utils.txt
 -r requirements/test.txt
+-r requirements/storage.txt

@@ -9,6 +9,7 @@ from app.api.routes_datasets import router as datasets_router
 from app.api.routes_ingest import router as ingest_router
 from app.api.routes_jobs import router as jobs_router
 from app.api.routes_outputs import router as outputs_router
+from app.api.routes_settings import router as settings_router
 from app.config import get_settings
 from app.graph.neo4j_client import get_store
 from app.models.schemas import FileCategory
@@ -68,6 +69,7 @@ app.include_router(jobs_router, prefix=settings.api_prefix)
 app.include_router(outputs_router, prefix=settings.api_prefix)
 app.include_router(chat_router, prefix=settings.api_prefix)
 app.include_router(datasets_router, prefix=settings.api_prefix)
+app.include_router(settings_router, prefix=settings.api_prefix)
 
 
 @app.get("/api/health")

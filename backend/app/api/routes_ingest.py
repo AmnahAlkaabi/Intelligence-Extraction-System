@@ -9,6 +9,7 @@ from app.models.schemas import FileProgress, Job, JobStatus
 from app.parsers.archive_expand import expand_archive, is_archive
 from app.parsers.router import classify
 from app.pipeline.job_manager import get_job_manager
+from app.storage import obs_client
 from app.storage.file_store import save_upload
 
 logger = logging.getLogger(__name__)
@@ -31,8 +32,17 @@ async def ingest_files(files: list[UploadFile]) -> Job:
         content = await f.read()
         if len(content) > settings.max_upload_mb * 1024 * 1024:
             raise HTTPException(413, f"{f.filename} exceeds max upload size of {settings.max_upload_mb} MB.")
-        path = await save_upload(job.job_id, f.filename or "unnamed", content)
+        filename = f.filename or "unnamed"
+        path = await save_upload(job.job_id, filename, content)
         saved_paths.append(path)
+        # Optional OBS mirror (see storage/obs_client.py) -- fire-and-forget,
+        # not awaited: mirror_upload already no-ops instantly when the
+        # feature is off (the default) or no credential is active, and
+        # when it IS active this must never make the upload response wait
+        # on a possibly slow/unreachable external bucket. The function
+        # swallows its own errors and just logs, so there's nothing here
+        # to await or handle.
+        asyncio.create_task(obs_client.mirror_upload(job.job_id, filename, content))
 
     # Archive Agent (L2): expand any ZIP/TAR uploads into their member files
     # before the job's file list is finalized, so each extracted file flows

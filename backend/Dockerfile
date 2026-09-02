@@ -105,6 +105,7 @@ RUN retry pip install --no-cache-dir --timeout 100 --retries 5 -r requirements/o
 RUN retry pip install --no-cache-dir --timeout 100 --retries 5 -r requirements/web.txt
 RUN retry pip install --no-cache-dir --timeout 100 --retries 5 -r requirements/data.txt
 RUN retry pip install --no-cache-dir --timeout 100 --retries 5 -r requirements/utils.txt
+RUN retry pip install --no-cache-dir --timeout 100 --retries 5 -r requirements/storage.txt
 
 # huggingface_hub defaults to its newer "Xet" storage backend for large
 # files, which downloads from cas-server.xethub.hf.co instead of

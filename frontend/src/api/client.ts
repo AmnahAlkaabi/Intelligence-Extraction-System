@@ -1,4 +1,7 @@
-import type { ChatMessage, ChatResponse, DataDumpTable, Job, SourceDocSummary } from "./types";
+import type {
+  ChatMessage, ChatResponse, DataDumpTable, Job, OBSCredential, OBSCredentialInput,
+  OBSSettings, OBSTestResult, SourceDocSummary, StructuredDataCatalog,
+} from "./types";
 
 const BASE = "/api";
 
@@ -69,6 +72,10 @@ export async function getDataDumpDocuments(jobId: string): Promise<SourceDocSumm
   return req<SourceDocSummary[]>(`/outputs/${jobId}/data-dump/documents`);
 }
 
+export async function getDataDumpSchema(jobId: string): Promise<StructuredDataCatalog> {
+  return req<StructuredDataCatalog>(`/outputs/${jobId}/data-dump/schema`);
+}
+
 export function artifactUrl(jobId: string, artifact: string): string {
   return `${BASE}/outputs/${jobId}/files/${artifact}`;
 }
@@ -91,4 +98,57 @@ export async function sendChatMessage(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ job_id: jobId, message, history }),
   });
+}
+
+export async function getObsSettings(): Promise<OBSSettings> {
+  return req<OBSSettings>("/settings/obs");
+}
+
+export async function setObsEnabled(enabled: boolean): Promise<OBSSettings> {
+  return req<OBSSettings>("/settings/obs", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ enabled }),
+  });
+}
+
+export async function createObsCredential(input: OBSCredentialInput): Promise<OBSCredential> {
+  return req<OBSCredential>("/settings/obs/credentials", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function updateObsCredential(
+  credentialId: string,
+  input: Partial<OBSCredentialInput>
+): Promise<OBSCredential> {
+  return req<OBSCredential>(`/settings/obs/credentials/${credentialId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function deleteObsCredential(credentialId: string): Promise<void> {
+  const res = await fetch(`${BASE}/settings/obs/credentials/${credentialId}`, { method: "DELETE" });
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const body = await res.json();
+      detail = body.detail || detail;
+    } catch {
+      // ignore -- e.g. a 204 has no body to parse
+    }
+    throw new Error(`${res.status}: ${detail}`);
+  }
+}
+
+export async function activateObsCredential(credentialId: string): Promise<OBSSettings> {
+  return req<OBSSettings>(`/settings/obs/credentials/${credentialId}/activate`, { method: "POST" });
+}
+
+export async function testObsCredential(credentialId: string): Promise<OBSTestResult> {
+  return req<OBSTestResult>(`/settings/obs/credentials/${credentialId}/test`, { method: "POST" });
 }
