@@ -62,8 +62,8 @@ cp backend/.env.example backend/.env
 Edit `backend/.env` — at minimum set your model endpoints:
 
 ```env
-QWEN_BASE_URL=http://<your-qwen-host>:8025/v1
-QWEN_MODEL_NAME=Qwen3.6-35B-A3B-AWQ
+QWEN_BASE_URL=http://<your-qwen-host>:8021/v1
+QWEN_MODEL_NAME=unsloth/Qwen3.8-27B-GGUF-1
 
 KIMI_BASE_URL=http://<your-kimi-host>:8001/v1
 KIMI_MODEL_NAME=unsloth/Kimi-K2.6-GGUF
