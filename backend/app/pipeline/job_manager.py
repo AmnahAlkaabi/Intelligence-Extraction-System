@@ -58,6 +58,58 @@ _ACTIVE_STATUSES = {
     JobStatus.GRAPH_BUILD, JobStatus.SYNTHESIZING,
 }
 _TERMINAL_FILE_STATUSES = (JobStatus.COMPLETE, JobStatus.FAILED, JobStatus.SKIPPED)
+# Upper bound on a file's pipeline stages (Specialist, Translator,
+# Chunk/Embed, Entity/PII/Financial/Relation Extractor), used only to scale
+# touch()'s partial-progress credit -- see touch() for why an upper bound
+# is fine even for categories that actually run fewer stages.
+_MAX_TRACKED_STAGES = 7
+
+
+def _compute_progress_pct(job: Job) -> float:
+    """A pure function of the job's current state (not a persisted value
+    read back later) -- called both by touch() (so the on-disk snapshot has
+    a sensible value) and directly by get_job()/list_jobs() before every
+    read, since touch() itself only fires at each file's start and end, not
+    on every job.agent_activity update in between (see touch()'s own
+    comment on this). Computing it fresh on every read means the API always
+    reflects live progress regardless of how stale the last touch() was.
+
+    COMPLETE is special-cased to 100.0: every file reaching a terminal
+    status only ever adds up to the 90% reserved for extraction below (the
+    remaining 10% is synthesis, which has no per-file signal to derive a
+    fraction from) -- without this, _finalize_job's own explicit
+    `job.progress_pct = 100.0` gets silently clobbered back down to 90.0 by
+    the touch() call it's immediately followed by.
+    """
+    if job.status == JobStatus.COMPLETE:
+        return 100.0
+
+    done = sum(1 for f in job.files if f.status in _TERMINAL_FILE_STATUSES)
+
+    # Partial credit for files still mid-pipeline -- without this,
+    # progress_pct sits frozen at whatever "done / total" was until the
+    # very first file finishes its *entire* multi-stage pipeline (parse,
+    # translate, chunk+embed, NER, PII, financial, relation), which can
+    # take several minutes even though real work is visibly happening the
+    # whole time (see agent_activity). Each in-progress file's fraction is
+    # deliberately capped strictly below whole (1), so it can never be
+    # mistaken for a fully "done" file -- once a file actually finishes
+    # it's picked up by `done` above instead, moving it from partial credit
+    # to a whole slot. A category with fewer real stages than
+    # _MAX_TRACKED_STAGES (e.g. one that skips NER/PII/financial/relation)
+    # just caps out at a lower fraction while in progress; that's fine
+    # since it still jumps straight to a full slot the moment it's
+    # actually done.
+    stages_done_by_file: dict[str, int] = {}
+    for activity in job.agent_activity:
+        if activity.status in ("completed", "failed", "skipped"):
+            stages_done_by_file[activity.file] = stages_done_by_file.get(activity.file, 0) + 1
+    in_progress_credit = sum(
+        min(stages_done_by_file.get(f.filename, 0), _MAX_TRACKED_STAGES - 1) / _MAX_TRACKED_STAGES
+        for f in job.files if f.status not in _TERMINAL_FILE_STATUSES
+    )
+
+    return round(100.0 * (done + in_progress_credit) / max(len(job.files), 1) * 0.9, 1)  # reserve 10% for synth
 
 
 @dataclass
@@ -109,10 +161,16 @@ class JobManager:
         return job
 
     def get_job(self, job_id: str) -> Job | None:
-        return self._jobs.get(job_id)
+        job = self._jobs.get(job_id)
+        if job is not None:
+            job.progress_pct = _compute_progress_pct(job)
+        return job
 
     def list_jobs(self) -> list[Job]:
-        return sorted(self._jobs.values(), key=lambda j: j.created_at, reverse=True)
+        jobs = sorted(self._jobs.values(), key=lambda j: j.created_at, reverse=True)
+        for job in jobs:
+            job.progress_pct = _compute_progress_pct(job)
+        return jobs
 
     def load_persisted_jobs(self) -> None:
         """Called once at startup. Jobs that were still processing when the
@@ -459,12 +517,17 @@ class JobManager:
 
     async def touch(self, job: Job) -> None:
         job.updated_at = datetime.now(timezone.utc)
-        done = sum(1 for f in job.files if f.status in _TERMINAL_FILE_STATUSES)
-        job.progress_pct = round(100.0 * done / max(len(job.files), 1) * 0.9, 1)  # reserve 10% for synth
-        # touch() fires on nearly every state change during processing
-        # (once per file per stage); a completed job's state can be sizeable
-        # (full knowledge graph, all extraction results), so the disk write
-        # is offloaded to a thread rather than blocking the event loop --
+        job.progress_pct = _compute_progress_pct(job)
+        # touch() fires at each file's start and end (plus batch/job-level
+        # transitions) -- NOT once per internal pipeline stage within
+        # process_file (parse/translate/chunk+embed/NER/... only update
+        # job.agent_activity directly, via agent_tracker.py, without going
+        # through touch() at all). So the on-disk snapshot only ever
+        # reflects agent_activity as of a file's last start/end, not its
+        # latest stage -- see storage/file_store.py's write_job_state
+        # docstring. A completed job's state can be sizeable (full
+        # knowledge graph, all extraction results), so the disk write is
+        # offloaded to a thread rather than blocking the event loop --
         # and with it, every other job's progress and every API request --
         # for the duration of the write.
         #
