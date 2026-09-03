@@ -65,6 +65,17 @@ class LLMClient:
             "chat": settings.role_chat,
             "translation": settings.role_translation,
         }
+        # One semaphore per physical backend (not per role -- several roles
+        # can share one backend, e.g. extraction+synthesis+chat all on Kimi
+        # by default, and they all draw from the same on-prem server's
+        # actual capacity). Bounds concurrent in-flight requests to that
+        # server regardless of how many files/segments the pipeline layer
+        # above decides to run in parallel -- see config.py for why this
+        # is needed.
+        self._semaphores: dict[str, asyncio.Semaphore] = {
+            backend: asyncio.Semaphore(settings.max_concurrent_llm_calls_per_backend)
+            for backend in self._clients
+        }
 
     def backend_for_role(self, role: str) -> str:
         return self._role_backend.get(role, "qwen")
@@ -142,11 +153,17 @@ class LLMClient:
         if json_mode:
             kwargs["response_format"] = {"type": "json_object"}
 
+        semaphore = self._semaphores[backend]
         last_err: Exception | None = None
         for attempt in range(1, self._settings.llm_max_retries + 1):
             start = asyncio.get_event_loop().time()
             try:
-                resp = await client.chat.completions.create(**kwargs)
+                # Held only for this one attempt, not the whole retry loop
+                # (including its backoff sleep) -- so a call backing off
+                # frees its slot for other waiting callers instead of
+                # holding it idle.
+                async with semaphore:
+                    resp = await client.chat.completions.create(**kwargs)
                 elapsed_ms = int((asyncio.get_event_loop().time() - start) * 1000)
                 choice = resp.choices[0].message.content or ""
                 usage = resp.usage

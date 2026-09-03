@@ -29,6 +29,13 @@ class Settings(BaseSettings):
 
     llm_request_timeout_s: int = 180
     llm_max_retries: int = 3
+    # Caps concurrent in-flight requests to EACH backend (Qwen, Kimi)
+    # independently of how many files/segments the pipeline decides to run
+    # in parallel -- MAX_PARALLEL_FILES files x up to 12 segments each can
+    # otherwise fire dozens of simultaneous requests at one on-prem model
+    # server, which just queues/times out under its own concurrency limit
+    # rather than actually processing any faster. See llm/client.py.
+    max_concurrent_llm_calls_per_backend: int = 4
 
     # --- Translation (Phase 2 preprocessing) ---
     translation_target_lang: str = "en"
