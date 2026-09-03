@@ -35,6 +35,7 @@ class LLMResponse:
     prompt_tokens: int
     completion_tokens: int
     latency_ms: int
+    finish_reason: str | None = None
 
 
 class LLMClient:
@@ -128,7 +129,7 @@ class LLMClient:
         *,
         json_mode: bool = False,
         temperature: float = 0.1,
-        max_tokens: int = 2048,
+        max_tokens: int = 4096,
         backend_override: str | None = None,
     ) -> LLMResponse:
         """backend_override: bypass the role -> backend mapping and force a
@@ -165,14 +166,15 @@ class LLMClient:
                 async with semaphore:
                     resp = await client.chat.completions.create(**kwargs)
                 elapsed_ms = int((asyncio.get_event_loop().time() - start) * 1000)
-                choice = resp.choices[0].message.content or ""
+                choice = resp.choices[0]
                 usage = resp.usage
                 return LLMResponse(
-                    text=choice,
+                    text=choice.message.content or "",
                     model=model,
                     prompt_tokens=usage.prompt_tokens if usage else 0,
                     completion_tokens=usage.completion_tokens if usage else 0,
                     latency_ms=elapsed_ms,
+                    finish_reason=choice.finish_reason,
                 )
             except (APIError, APITimeoutError) as exc:
                 last_err = exc
@@ -181,24 +183,45 @@ class LLMClient:
                 await asyncio.sleep(min(2 ** attempt, 10))
         raise RuntimeError(f"LLM backend '{backend}' failed after retries: {last_err}")
 
+    # Ceiling for the max_tokens escalation below -- keeps a pathological
+    # document (one segment that would need an enormous entity list no
+    # matter the budget) from ballooning requests without bound.
+    _MAX_TOKENS_CEILING = 8192
+
     async def complete_json(self, role: str, system: str, user: str, **kwargs) -> dict:
         """Convenience wrapper: force JSON mode and parse the result robustly.
 
         Retries on a parse failure, not just complete()'s own network-level
-        retries -- a truncated or markdown-wrapped response is frequently a
-        one-off sampling artifact (e.g. the model ran out of max_tokens on
-        a long entity list this time), so asking again often succeeds where
-        re-parsing the same bad text never would.
+        retries. Two distinct failure modes land here, and only one of them
+        is helped by a plain retry:
+
+        - A markdown-wrapped or otherwise malformed response is typically a
+          one-off sampling artifact -- asking again with the same max_tokens
+          often succeeds where re-parsing the same bad text never would.
+        - A response cut off by finish_reason == "length" is NOT random --
+          an entity-dense segment can deterministically need more output
+          tokens than the budget allows, and a plain retry regenerates the
+          exact same truncation every time (confirmed in practice: 3/3
+          identical failures on one such segment). This case instead
+          doubles max_tokens for the next attempt, up to _MAX_TOKENS_CEILING.
         """
         last_err: LLMJSONParseError | None = None
+        max_tokens = kwargs.pop("max_tokens", 4096)
         for attempt in range(1, self._settings.llm_max_retries + 1):
-            resp = await self.complete(role, system, user, json_mode=True, **kwargs)
+            resp = await self.complete(role, system, user, json_mode=True, max_tokens=max_tokens, **kwargs)
             try:
                 return _safe_json_parse(resp.text)
             except LLMJSONParseError as exc:
                 last_err = exc
-                logger.warning("LLM JSON parse failed (attempt %s/%s) on role %s: %s",
-                                attempt, self._settings.llm_max_retries, role, exc)
+                if resp.finish_reason == "length" and max_tokens < self._MAX_TOKENS_CEILING:
+                    max_tokens = min(max_tokens * 2, self._MAX_TOKENS_CEILING)
+                    logger.warning(
+                        "LLM response truncated at max_tokens (attempt %s/%s) on role %s -- "
+                        "retrying with max_tokens=%s", attempt, self._settings.llm_max_retries, role, max_tokens,
+                    )
+                else:
+                    logger.warning("LLM JSON parse failed (attempt %s/%s) on role %s: %s",
+                                    attempt, self._settings.llm_max_retries, role, exc)
         raise last_err
 
 
