@@ -27,18 +27,33 @@ def _segment_text(text: str) -> list[str]:
     return segments[:MAX_SEGMENTS]
 
 
-async def run_ner(text: str, source_file: str) -> list[Entity]:
+def _segment_failure_warning(agent: str, failed: int, total: int) -> str | None:
+    """A segment that fails even after complete_json's own retries means
+    that portion of the document contributed nothing to this agent's
+    output. Silently returning fewer results than the document actually
+    contains is worse than an empty result -- an empty result reads as
+    "nothing here", this reads as complete when it's actually partial.
+    Surfaced as a file-level warning (result.errors) so it shows up in the
+    job's per-file warnings instead of only ever appearing in backend logs.
+    """
+    if not failed:
+        return None
+    return (f"{agent}: {failed} of {total} text segment(s) failed to process "
+            f"(LLM error or unparseable response) -- results may be incomplete.")
+
+
+async def run_ner(text: str, source_file: str) -> tuple[list[Entity], str | None]:
     client = get_llm_client()
     segments = _segment_text(text)
     if not segments:
-        return []
+        return [], None
 
-    async def _one(seg: str) -> list[Entity]:
+    async def _one(seg: str) -> tuple[list[Entity], bool]:
         try:
             data = await client.complete_json("extraction", NER_SYSTEM, seg)
         except Exception:
             logger.exception("NER extraction failed for %s", source_file)
-            return []
+            return [], False
         out = []
         for item in data.get("entities", []):
             try:
@@ -49,10 +64,12 @@ async def run_ner(text: str, source_file: str) -> list[Entity]:
                 ))
             except (KeyError, TypeError, ValueError):
                 continue
-        return out
+        return out, True
 
     results = await asyncio.gather(*(_one(s) for s in segments))
-    return _dedup_entities([e for sub in results for e in sub])
+    failed = sum(1 for _, ok in results if not ok)
+    entities = _dedup_entities([e for sub, _ in results for e in sub])
+    return entities, _segment_failure_warning("NER", failed, len(segments))
 
 
 def _dedup_entities(entities: list[Entity]) -> list[Entity]:
@@ -67,7 +84,9 @@ def _dedup_entities(entities: list[Entity]) -> list[Entity]:
     return list(merged.values())
 
 
-async def run_pii(text: str, source_file: str, entities: list[Entity] | None = None) -> list[PIIFinding]:
+async def run_pii(
+    text: str, source_file: str, entities: list[Entity] | None = None
+) -> tuple[list[PIIFinding], str | None]:
     """entities: this file's already-extracted entities (NER runs before PII
     in domain_managers.py), passed the same way run_relations already
     receives them -- lets the model attribute a finding to the specific
@@ -76,17 +95,17 @@ async def run_pii(text: str, source_file: str, entities: list[Entity] | None = N
     client = get_llm_client()
     segments = _segment_text(text)
     if not segments:
-        return []
+        return [], None
 
     person_names = sorted({e.name for e in (entities or []) if e.type == "PERSON"})
 
-    async def _one(seg: str) -> list[PIIFinding]:
+    async def _one(seg: str) -> tuple[list[PIIFinding], bool]:
         prompt = f"Known entities: {person_names}\n\nText:\n{seg}" if person_names else seg
         try:
             data = await client.complete_json("extraction", PII_SYSTEM, prompt)
         except Exception:
             logger.exception("PII extraction failed for %s", source_file)
-            return []
+            return [], False
         out = []
         for item in data.get("findings", []):
             try:
@@ -112,24 +131,26 @@ async def run_pii(text: str, source_file: str, entities: list[Entity] | None = N
                 ))
             except (KeyError, TypeError):
                 continue
-        return out
+        return out, True
 
     results = await asyncio.gather(*(_one(s) for s in segments))
-    return [f for sub in results for f in sub]
+    failed = sum(1 for _, ok in results if not ok)
+    findings = [f for sub, _ in results for f in sub]
+    return findings, _segment_failure_warning("PII", failed, len(segments))
 
 
-async def run_financial(text: str, source_file: str) -> list[FinancialFact]:
+async def run_financial(text: str, source_file: str) -> tuple[list[FinancialFact], str | None]:
     client = get_llm_client()
     segments = _segment_text(text)
     if not segments:
-        return []
+        return [], None
 
-    async def _one(seg: str) -> list[FinancialFact]:
+    async def _one(seg: str) -> tuple[list[FinancialFact], bool]:
         try:
             data = await client.complete_json("extraction", FINANCIAL_SYSTEM, seg)
         except Exception:
             logger.exception("Financial extraction failed for %s", source_file)
-            return []
+            return [], False
         out = []
         for item in data.get("facts", []):
             try:
@@ -142,28 +163,32 @@ async def run_financial(text: str, source_file: str) -> list[FinancialFact]:
                 ))
             except (KeyError, TypeError, ValueError):
                 continue
-        return out
+        return out, True
 
     results = await asyncio.gather(*(_one(s) for s in segments))
-    return [f for sub in results for f in sub]
+    failed = sum(1 for _, ok in results if not ok)
+    facts = [f for sub, _ in results for f in sub]
+    return facts, _segment_failure_warning("Financial", failed, len(segments))
 
 
-async def run_relations(text: str, entities: list[Entity], source_file: str) -> list[Relation]:
+async def run_relations(
+    text: str, entities: list[Entity], source_file: str
+) -> tuple[list[Relation], str | None]:
     if not entities:
-        return []
+        return [], None
     client = get_llm_client()
     entity_names = sorted({e.name for e in entities})
     segments = _segment_text(text)
     if not segments:
-        return []
+        return [], None
 
-    async def _one(seg: str) -> list[Relation]:
+    async def _one(seg: str) -> tuple[list[Relation], bool]:
         prompt = f"Known entities: {entity_names}\n\nText:\n{seg}"
         try:
             data = await client.complete_json("extraction", RELATION_SYSTEM, prompt)
         except Exception:
             logger.exception("Relation extraction failed for %s", source_file)
-            return []
+            return [], False
         out = []
         for item in data.get("relations", []):
             try:
@@ -175,10 +200,12 @@ async def run_relations(text: str, entities: list[Entity], source_file: str) -> 
                 ))
             except (KeyError, TypeError, ValueError):
                 continue
-        return out
+        return out, True
 
     results = await asyncio.gather(*(_one(s) for s in segments))
-    return [r for sub in results for r in sub]
+    failed = sum(1 for _, ok in results if not ok)
+    relations = [r for sub, _ in results for r in sub]
+    return relations, _segment_failure_warning("Relation", failed, len(segments))
 
 
 async def run_summary(text: str) -> str:

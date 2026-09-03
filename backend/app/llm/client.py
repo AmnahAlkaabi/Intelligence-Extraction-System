@@ -165,9 +165,24 @@ class LLMClient:
         raise RuntimeError(f"LLM backend '{backend}' failed after retries: {last_err}")
 
     async def complete_json(self, role: str, system: str, user: str, **kwargs) -> dict:
-        """Convenience wrapper: force JSON mode and parse the result robustly."""
-        resp = await self.complete(role, system, user, json_mode=True, **kwargs)
-        return _safe_json_parse(resp.text)
+        """Convenience wrapper: force JSON mode and parse the result robustly.
+
+        Retries on a parse failure, not just complete()'s own network-level
+        retries -- a truncated or markdown-wrapped response is frequently a
+        one-off sampling artifact (e.g. the model ran out of max_tokens on
+        a long entity list this time), so asking again often succeeds where
+        re-parsing the same bad text never would.
+        """
+        last_err: LLMJSONParseError | None = None
+        for attempt in range(1, self._settings.llm_max_retries + 1):
+            resp = await self.complete(role, system, user, json_mode=True, **kwargs)
+            try:
+                return _safe_json_parse(resp.text)
+            except LLMJSONParseError as exc:
+                last_err = exc
+                logger.warning("LLM JSON parse failed (attempt %s/%s) on role %s: %s",
+                                attempt, self._settings.llm_max_retries, role, exc)
+        raise last_err
 
 
 def _safe_json_parse(text: str) -> dict:

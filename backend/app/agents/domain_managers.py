@@ -243,7 +243,9 @@ async def process_file(
 
     activity = start_activity(job, "Entity Extractor", file_path)
     try:
-        result.entities = await run_ner(text, file_path)
+        result.entities, warning = await run_ner(text, file_path)
+        if warning:
+            result.errors.append(warning)
         finish_activity(activity, "completed")
     except Exception:
         logger.exception("NER failed for %s", file_path)
@@ -252,7 +254,9 @@ async def process_file(
 
     activity = start_activity(job, "PII Extractor", file_path)
     try:
-        result.pii_findings = await run_pii(text, file_path, result.entities)
+        result.pii_findings, warning = await run_pii(text, file_path, result.entities)
+        if warning:
+            result.errors.append(warning)
         # Independent, non-LLM detector for internationally standardized ID
         # formats (passport MRZ, IBAN, card numbers -- checksum-verified;
         # a few national ID shapes -- structural only). See id_formats.py
@@ -268,7 +272,9 @@ async def process_file(
 
     activity = start_activity(job, "Financial Extractor", file_path)
     try:
-        result.financial_facts = await run_financial(text, file_path)
+        result.financial_facts, warning = await run_financial(text, file_path)
+        if warning:
+            result.errors.append(warning)
         finish_activity(activity, "completed")
     except Exception:
         logger.exception("Financial extraction failed for %s", file_path)
@@ -277,7 +283,9 @@ async def process_file(
 
     activity = start_activity(job, "Relation Extractor", file_path)
     try:
-        result.relations = await run_relations(text, result.entities, file_path)
+        result.relations, warning = await run_relations(text, result.entities, file_path)
+        if warning:
+            result.errors.append(warning)
         finish_activity(activity, "completed")
     except Exception:
         logger.exception("Relation extraction failed for %s", file_path)
