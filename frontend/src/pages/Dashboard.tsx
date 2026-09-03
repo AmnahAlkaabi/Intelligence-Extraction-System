@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { deleteJob, getJob } from "../api/client";
+import { cancelJob, deleteJob, getJob } from "../api/client";
 import type { Job } from "../api/types";
 import { JobProgress } from "../components/JobProgress";
 import { AgentStatusPanel, activeAgentCount } from "../components/AgentStatusPanel";
@@ -37,6 +37,7 @@ export default function DashboardPage() {
   const [tab, setTab] = useState<Tab>("overview");
   const [err, setErr] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const pollRef = useRef<number | null>(null);
   const cancelledRef = useRef(false);
   const autoSwitchedRef = useRef(false);
@@ -94,6 +95,21 @@ export default function DashboardPage() {
   const showOutputs = hasResult || chatAvailable;
   const running = activeAgentCount(job.agent_activity);
 
+  async function handleCancel() {
+    if (!confirm("Cancel this job? Whatever hasn't finished processing yet will be marked as not analyzed. This can't be undone.")) {
+      return;
+    }
+    setCancelling(true);
+    try {
+      const updated = await cancelJob(job!.job_id);
+      handleBatchUpdate(updated);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Failed to cancel job.");
+    } finally {
+      setCancelling(false);
+    }
+  }
+
   async function handleDelete() {
     if (isActive) {
       alert(`This job is still ${job!.status} — wait for it to finish before deleting it.`);
@@ -121,6 +137,11 @@ export default function DashboardPage() {
           onRenamed={(name) => setJob((prev) => (prev ? { ...prev, name } : prev))}
         />
         <StatusBadge status={job.status} />
+        {isActive && (
+          <button className="job-delete-btn job-delete-btn-inline" title="Cancel job" disabled={cancelling} onClick={handleCancel}>
+            {cancelling ? "Cancelling…" : "⏹ Cancel"}
+          </button>
+        )}
         <button className="job-delete-btn job-delete-btn-inline" title="Delete job" disabled={deleting} onClick={handleDelete}>
           {deleting ? "Deleting…" : "🗑 Delete"}
         </button>

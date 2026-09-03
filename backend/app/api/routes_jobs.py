@@ -84,3 +84,21 @@ async def stop_batches(job_id: str) -> Job:
     if not started:
         raise HTTPException(404, "Job not found.")
     return manager.get_job(job_id)
+
+
+@router.post("/jobs/{job_id}/cancel", response_model=Job)
+async def cancel_job(job_id: str) -> Job:
+    """Cancels a job that's actively running right now (not paused --
+    AWAITING_BATCH_CONFIRM jobs use /batches/stop instead, since there's no
+    task in flight there to cancel). Marks the job failed with a clear
+    "cancelled by user request" error and every unfinished file SKIPPED,
+    same as a job caught mid-run by a server restart, rather than leaving
+    it stuck at its last progress forever."""
+    manager = get_job_manager()
+    try:
+        cancelled = await manager.cancel_job(job_id)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    if not cancelled:
+        raise HTTPException(404, "Job not found.")
+    return manager.get_job(job_id)

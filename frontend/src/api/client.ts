@@ -50,6 +50,10 @@ export async function stopBatches(jobId: string): Promise<Job> {
   return req<Job>(`/jobs/${jobId}/batches/stop`, { method: "POST" });
 }
 
+export async function cancelJob(jobId: string): Promise<Job> {
+  return req<Job>(`/jobs/${jobId}/cancel`, { method: "POST" });
+}
+
 export async function deleteJob(jobId: string): Promise<void> {
   const res = await fetch(`${BASE}/jobs/${jobId}`, { method: "DELETE" });
   if (!res.ok) {

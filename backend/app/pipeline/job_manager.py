@@ -188,6 +188,19 @@ class JobManager:
         job = self._jobs[job_id]
         try:
             await coro
+        except asyncio.CancelledError:
+            # cancel_job() calls task.cancel() -- this is that cancellation
+            # arriving here, not the process shutting down. Must be caught
+            # and turned into a normal terminal state (not re-raised): left
+            # alone, the job would stay stuck at its last in-progress status
+            # forever with no error explaining why nothing happened next.
+            logger.info("Job %s cancelled by user request.", job_id)
+            job.status = JobStatus.FAILED
+            job.error = "Job cancelled by user request."
+            for f in job.files:
+                if f.status not in _TERMINAL_FILE_STATUSES:
+                    f.status = JobStatus.SKIPPED
+            await self.touch(job)
         except Exception as exc:  # noqa: BLE001
             # Belt-and-suspenders: every stage below already has its own
             # try/except, but this catches anything upstream of/between them
@@ -200,6 +213,38 @@ class JobManager:
             job.status = JobStatus.FAILED
             job.error = str(exc)
             await self.touch(job)
+
+    async def cancel_job(self, job_id: str) -> bool:
+        """Cancels a job that's actively running right now. Returns False if
+        the job doesn't exist; raises ValueError if it isn't actually
+        running (AWAITING_BATCH_CONFIRM has no task in flight to cancel at
+        that point -- use stop_batches() instead, which already handles
+        that case by synthesizing a report from whatever finished).
+
+        Cancellation is cooperative: task.cancel() raises CancelledError
+        inside the running coroutine at its next await point (an LLM call,
+        a disk write, etc.), which propagates up through every nested
+        await -- including out of whichever asyncio.gather() is mid-flight
+        for the current batch, which cancels every file's in-progress
+        _process_one() along with it -- until _guarded() above catches it
+        and records the terminal state.
+        """
+        job = self._jobs.get(job_id)
+        if job is None:
+            return False
+        if job.status not in _ACTIVE_STATUSES:
+            raise ValueError(
+                f"Job {job_id} is not actively running (status={job.status.value}) -- "
+                "use /batches/stop if it's awaiting batch confirmation."
+            )
+        task = self._tasks.get(job_id)
+        if task is not None and not task.done():
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass  # already handled by _guarded; this is belt-and-suspenders
+        return True
 
     async def _prepare_and_run(self, job_id: str, file_paths: list[str]) -> None:
         job = self._jobs[job_id]
