@@ -231,38 +231,53 @@ async def process_file(
         result.errors.append("Chunk+embed step failed")
         finish_activity(activity, "failed")
 
+    # extraction_backend gates only the LLM-dependent calls below --
+    # Entity/Financial/Relation have no non-LLM fallback and are skipped
+    # outright when it's down, but PII Extractor's non-LLM detector
+    # (detect_standard_ids, below) always runs regardless: it needs no LLM
+    # at all, so it must not be skipped just because the extraction
+    # backend happens to be down. Previously the whole block returned
+    # early on an unreachable backend, which meant a down LLM silently zeroed out
+    # ALL PII detection for the file, including the part that never
+    # depended on it.
     extraction_backend = get_llm_client().backend_for_role("extraction")
-    if extraction_backend in unreachable_backends:
-        msg = (f"NER/PII/Financial/Relation extraction skipped: "
-               f"'{extraction_backend}' model endpoint is unreachable")
-        result.errors.append(msg)
-        for name in ("Entity Extractor", "PII Extractor", "Financial Extractor", "Relation Extractor"):
-            finish_activity(start_activity(job, name, file_path), "skipped")
-        result.quality = _assess_quality_safe(doc, result, file_path)
-        return result
+    backend_unreachable = extraction_backend in unreachable_backends
+    if backend_unreachable:
+        result.errors.append(
+            f"NER/Financial/Relation extraction, and LLM-based PII detection, skipped: "
+            f"'{extraction_backend}' model endpoint is unreachable"
+        )
 
     activity = start_activity(job, "Entity Extractor", file_path)
-    try:
-        result.entities, warning = await run_ner(text, file_path)
-        if warning:
-            result.errors.append(warning)
-        finish_activity(activity, "completed")
-    except Exception:
-        logger.exception("NER failed for %s", file_path)
-        result.errors.append("NER step failed")
-        finish_activity(activity, "failed")
+    if backend_unreachable:
+        finish_activity(activity, "skipped")
+    else:
+        try:
+            result.entities, warning = await run_ner(text, file_path)
+            if warning:
+                result.errors.append(warning)
+            finish_activity(activity, "completed")
+        except Exception:
+            logger.exception("NER failed for %s", file_path)
+            result.errors.append("NER step failed")
+            finish_activity(activity, "failed")
 
+    # Independent, non-LLM detector for internationally standardized ID
+    # formats (passport MRZ, IBAN, card numbers -- checksum-verified; a few
+    # national ID shapes -- structural only). See id_formats.py for why
+    # this runs on the raw text rather than trying to validate the LLM's
+    # already-redacted findings. Kept under the same "PII Extractor"
+    # activity name/span as the LLM call below (rather than a separate
+    # activity) so the UI still shows one PII Extractor card per file, not
+    # a second one the fixed agent-board lane layout wouldn't recognize.
     activity = start_activity(job, "PII Extractor", file_path)
     try:
-        result.pii_findings, warning = await run_pii(text, file_path, result.entities)
-        if warning:
-            result.errors.append(warning)
-        # Independent, non-LLM detector for internationally standardized ID
-        # formats (passport MRZ, IBAN, card numbers -- checksum-verified;
-        # a few national ID shapes -- structural only). See id_formats.py
-        # for why this runs on the raw text rather than trying to validate
-        # the LLM's already-redacted findings.
         result.pii_findings.extend(detect_standard_ids(text, file_path))
+        if not backend_unreachable:
+            llm_findings, warning = await run_pii(text, file_path, result.entities)
+            result.pii_findings.extend(llm_findings)
+            if warning:
+                result.errors.append(warning)
         _apply_single_subject_fallback(result)
         finish_activity(activity, "completed")
     except Exception:
@@ -271,31 +286,38 @@ async def process_file(
         finish_activity(activity, "failed")
 
     activity = start_activity(job, "Financial Extractor", file_path)
-    try:
-        result.financial_facts, warning = await run_financial(text, file_path)
-        if warning:
-            result.errors.append(warning)
-        finish_activity(activity, "completed")
-    except Exception:
-        logger.exception("Financial extraction failed for %s", file_path)
-        result.errors.append("Financial step failed")
-        finish_activity(activity, "failed")
+    if backend_unreachable:
+        finish_activity(activity, "skipped")
+    else:
+        try:
+            result.financial_facts, warning = await run_financial(text, file_path)
+            if warning:
+                result.errors.append(warning)
+            finish_activity(activity, "completed")
+        except Exception:
+            logger.exception("Financial extraction failed for %s", file_path)
+            result.errors.append("Financial step failed")
+            finish_activity(activity, "failed")
 
     activity = start_activity(job, "Relation Extractor", file_path)
-    try:
-        result.relations, warning = await run_relations(text, result.entities, file_path)
-        if warning:
-            result.errors.append(warning)
-        finish_activity(activity, "completed")
-    except Exception:
-        logger.exception("Relation extraction failed for %s", file_path)
-        result.errors.append("Relation step failed")
-        finish_activity(activity, "failed")
+    if backend_unreachable:
+        finish_activity(activity, "skipped")
+    else:
+        try:
+            result.relations, warning = await run_relations(text, result.entities, file_path)
+            if warning:
+                result.errors.append(warning)
+            finish_activity(activity, "completed")
+        except Exception:
+            logger.exception("Relation extraction failed for %s", file_path)
+            result.errors.append("Relation step failed")
+            finish_activity(activity, "failed")
 
-    try:
-        result.summary = await run_summary(text)
-    except Exception:
-        logger.exception("Summary failed for %s", file_path)
+    if not backend_unreachable:
+        try:
+            result.summary = await run_summary(text)
+        except Exception:
+            logger.exception("Summary failed for %s", file_path)
 
     activity = start_activity(job, "Data Quality Validator", file_path)
     try:
