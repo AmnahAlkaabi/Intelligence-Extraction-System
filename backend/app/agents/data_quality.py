@@ -77,6 +77,28 @@ def _classify_cell(value: str) -> str:
     return "ok"
 
 
+# Boolean values legitimately come in several different, mutually
+# exclusive conventions -- a column consistently using any ONE of them
+# (all true/false, or all yes/no, or all 1/0) is clean data, not an
+# error. What actually indicates a problem is MIXING conventions within
+# one column (true, "yes", false, 1 all appearing together) -- unlike
+# every other type here, checked against one fixed universal definition,
+# boolean consistency has to be measured against whichever single style
+# is dominant in THIS column. See _boolean_type_hits, used by
+# _assess_table instead of _matches_type for this one type.
+_BOOLEAN_STYLES: list[frozenset[str]] = [
+    frozenset({"true", "false"}),
+    frozenset({"yes", "no"}),
+    frozenset({"y", "n"}),
+    frozenset({"1", "0"}),
+]
+
+
+def _boolean_type_hits(values: list[str]) -> int:
+    lowered = [v.strip().lower() for v in values]
+    return max(sum(1 for v in lowered if v in style) for style in _BOOLEAN_STYLES)
+
+
 def _matches_type(value: str, inferred: str) -> bool:
     v = value.strip()
     if inferred == "number":
@@ -117,7 +139,10 @@ def _assess_table(table: TableBlock) -> TableQuality:
         distinct_count = len({v.lower() for v in ok_values})
         distinct_ratio = distinct_count / len(ok_values) if ok_values else 0.0
         inferred = guess_column_type(header, ok_values[:20])
-        type_hits = sum(1 for v in ok_values if _matches_type(v, inferred))
+        if inferred == "boolean":
+            type_hits = _boolean_type_hits(ok_values)
+        else:
+            type_hits = sum(1 for v in ok_values if _matches_type(v, inferred))
         type_consistency = type_hits / len(ok_values) if ok_values else 1.0
 
         issues: list[str] = []

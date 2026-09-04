@@ -95,6 +95,19 @@ def standardize_column(column: str) -> str:
     return "_".join(deduped)
 
 
+_BOOLEAN_NAME_RE = re.compile(r"^(is|has|can|should)_")
+_BOOLEAN_NAME_KEYWORDS = ("flag", "active", "enabled", "disabled", "paid", "verified", "deleted", "approved")
+
+# Value-based boolean sniffing (below) deliberately excludes "1"/"0" --
+# unlike true/false/yes/no, those overlap too heavily with ordinary small-
+# integer data (counts, scores) to safely infer "boolean" from values
+# alone. "1"/"0" only count as boolean evidence once the column already
+# looks boolean by name (see _matches_type's boolean branch in
+# data_quality.py, which does include them once a column IS inferred
+# boolean -- this only affects how that inference is triggered).
+_BOOLEAN_WORD_TOKENS = frozenset({"true", "false", "yes", "no", "y", "n", "t", "f"})
+
+
 def guess_column_type(column: str, samples: list[str]) -> str:
     norm = column.lower()
     if _ID_RE.search(norm):
@@ -105,6 +118,8 @@ def guess_column_type(column: str, samples: list[str]) -> str:
         return "phone"
     if any(k in norm for k in ("date", "dt", "time")):
         return "date"
+    if _BOOLEAN_NAME_RE.match(norm) or any(k in norm for k in _BOOLEAN_NAME_KEYWORDS):
+        return "boolean"
     if any(k in norm for k in ("amount", "price", "total", "qty", "quantity", "amt", "count")):
         return "number"
     checked = [s for s in samples if s.strip()][:20]
@@ -118,6 +133,9 @@ def guess_column_type(column: str, samples: list[str]) -> str:
                 pass
         if numeric_hits / len(checked) >= 0.8:
             return "number"
+        word_hits = sum(1 for s in checked if s.strip().lower() in _BOOLEAN_WORD_TOKENS)
+        if word_hits / len(checked) >= 0.8:
+            return "boolean"
     return "text"
 
 

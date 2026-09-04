@@ -375,7 +375,7 @@ class BITableColumn(BaseModel):
     source_file: str
     source_table: str           # "<file>::<sheet/table/caption>"
     source_column: str
-    data_type_guess: str        # id | email | phone | date | number | text
+    data_type_guess: str        # id | email | phone | date | number | boolean | text
     sample_values: list[str] = []
     # The transformation rule that produces this proposal: the SQL-style
     # join condition for a cross-file table (e.g. "FROM orders.csv LEFT
