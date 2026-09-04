@@ -201,6 +201,26 @@ def _peek_first_char(file_path: str) -> str:
                 return chr(chunk[0])
 
 
+def _clean_exception_message(exc: Exception) -> str:
+    """str(exc) on some ijson/yajl parse errors (confirmed for invalid-
+    UTF-8-byte failures) returns Python's raw bytes-repr -- a b'...'
+    wrapper with literal backslash-n escapes and \\xNN hex escapes --
+    instead of readable text, because the underlying C parser embeds the
+    raw byte context around the failure directly into the exception's
+    args as bytes rather than str, and bytes.__str__ falls back to
+    repr(). A plain f"{exc}" leaks that repr verbatim into a user-facing
+    warning. Decoding with errors="replace" can't perfectly recover text
+    that's genuinely mis-encoded (that's the defect being reported, after
+    all) but at least turns it back into readable text with replacement
+    characters instead of Python's internal repr syntax.
+    """
+    parts = [
+        arg.decode("utf-8", errors="replace") if isinstance(arg, bytes) else str(arg)
+        for arg in exc.args
+    ]
+    return " ".join(parts) if parts else str(exc)
+
+
 class JSONParser(BaseParser):
     category = FileCategory.JSON_
 
@@ -335,5 +355,5 @@ class JSONParser(BaseParser):
             )
         except Exception as exc:  # noqa: BLE001
             logger.exception("JSON parse failed on %s", file_path)
-            doc.warnings.append(f"JSON parse error: {exc}")
+            doc.warnings.append(f"JSON parse error: {_clean_exception_message(exc)}")
         return doc
