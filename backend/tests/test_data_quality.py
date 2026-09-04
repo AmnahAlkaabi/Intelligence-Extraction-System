@@ -56,3 +56,63 @@ def test_clean_small_column_is_not_flagged():
     col = q.tables[0].columns[0]
     assert col.type_consistency == 1.0
     assert not any("don't match inferred type" in issue for issue in col.issues)
+
+
+# ------------------------------------------------------------- boolean type --
+# Issue: guess_column_type had no boolean category at all -- a column
+# like is_paid with values [true, "yes", false, 1] (genuinely
+# inconsistent: native JSON bool, string, bool, int, already flattened to
+# text by table-building time) fell through to the generic "text" bucket,
+# whose _matches_type check is an unconditional `return True`. It scored
+# a perfect 100% type consistency and was never flagged, no matter how
+# mixed the representations were. Unlike every other type here (one fixed
+# universal definition of "valid"), booleans legitimately come in several
+# mutually exclusive conventions (true/false, yes/no, y/n, 1/0) -- a
+# column consistently using any ONE is clean data, not an error; what
+# indicates a real problem is MIXING conventions within one column.
+
+def test_mixed_convention_boolean_column_is_flagged():
+    """The real ground-truth defect: true/"yes"/false/1 mixed together."""
+    doc = _doc_with_table(["is_paid"], [["True"], ["yes"], ["False"], ["1"]])
+    result = DomainResult(domain="json", source_file="f.json", tables=doc.tables)
+
+    q = assess_quality(doc, result)
+
+    col = q.tables[0].columns[0]
+    assert col.inferred_type == "boolean"
+    assert col.type_consistency == 0.5  # 2 of 4 match the dominant true/false style
+    assert any("don't match inferred type" in issue for issue in col.issues)
+
+
+def test_consistent_yes_no_boolean_column_is_not_flagged():
+    doc = _doc_with_table(["subscribed"], [["yes"], ["no"], ["yes"], ["yes"]])
+    result = DomainResult(domain="json", source_file="f.json", tables=doc.tables)
+
+    q = assess_quality(doc, result)
+
+    col = q.tables[0].columns[0]
+    assert col.inferred_type == "boolean"
+    assert col.type_consistency == 1.0
+    assert not any("don't match inferred type" in issue for issue in col.issues)
+
+
+def test_boolean_inferred_from_column_name_prefix():
+    doc = _doc_with_table(["is_active"], [["true"], ["false"], ["true"]])
+    result = DomainResult(domain="json", source_file="f.json", tables=doc.tables)
+
+    q = assess_quality(doc, result)
+
+    assert q.tables[0].columns[0].inferred_type == "boolean"
+
+
+def test_ordinary_numeric_column_with_0_1_values_is_not_misread_as_boolean():
+    """"1"/"0" overlap with a boolean style but are deliberately excluded
+    from value-only boolean sniffing -- a neutral column name with mostly
+    0/1/2/3-style values must stay "number", not become a false-positive
+    "boolean"."""
+    doc = _doc_with_table(["delta_x"], [["0"], ["1"], ["3"], ["2"], ["1"], ["0"], ["5"]])
+    result = DomainResult(domain="json", source_file="f.json", tables=doc.tables)
+
+    q = assess_quality(doc, result)
+
+    assert q.tables[0].columns[0].inferred_type == "number"

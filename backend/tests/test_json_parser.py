@@ -244,3 +244,82 @@ async def test_no_duplicate_key_warning_when_none_present(tmp_path):
     doc = await _parse(path)
 
     assert not any("duplicate object key" in w.lower() for w in doc.warnings)
+
+
+# ------------------------------------------------- object-wrapped arrays --
+# Issue: json_parser only recognized a BARE top-level array ([...]) as
+# "multiple records". {"employees": [...]} -- an extremely common API/
+# export convention -- fell through to the single-record path, treating
+# the whole document as one record. _flatten_record then recursively
+# flattened the wrapped array into per-index dotted-path columns
+# (employees[0].name, employees[1].name, ...) instead of one row per
+# record: an unreadable single-row table, and NER/PII/Financial/Relation
+# input capped at json.dumps(whole_document)[:4000] instead of per-record,
+# silently dropping later records from what the LLM ever saw.
+
+@pytest.mark.asyncio
+async def test_object_wrapped_array_is_unwrapped_into_records(tmp_path):
+    payload = {"employees": [
+        {"id": 1, "name": "Alice"},
+        {"id": 2, "name": "Bob"},
+        {"id": 3, "name": "Carol"},
+    ]}
+    path = _write(tmp_path, "employees.json", json.dumps(payload))
+
+    doc = await _parse(path)
+
+    assert doc.metadata["record_count"] == 3
+    assert not any("employees[0]" in h or "employees[1]" in h for h in doc.tables[0].headers)
+    assert set(doc.tables[0].headers) >= {"id", "name"}
+    assert len(doc.tables[0].rows) == 3
+    # Each record gets its own text block for LLM extraction, not one
+    # 4000-char-capped dump of the entire document.
+    assert len(doc.text_blocks) >= 3
+
+
+@pytest.mark.asyncio
+async def test_single_list_valued_key_object_stays_a_record_when_ambiguous(tmp_path):
+    """Two top-level keys are both non-empty lists of dicts -- ambiguous
+    which one is "the" record list, so this must stay a single record
+    rather than guessing and shattering the wrong one."""
+    payload = {"users": [{"id": 1}, {"id": 2}], "errors": [{"code": "E1"}, {"code": "E2"}]}
+    path = _write(tmp_path, "ambiguous.json", json.dumps(payload))
+
+    doc = await _parse(path)
+
+    assert doc.metadata["record_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_object_with_no_list_valued_key_stays_a_single_record(tmp_path):
+    payload = {"id": 1, "name": "Alice", "tags": ["a", "b", "c"]}  # list of scalars, not dicts
+    path = _write(tmp_path, "scalar_list.json", json.dumps(payload))
+
+    doc = await _parse(path)
+
+    assert doc.metadata["record_count"] == 1
+
+
+# ---------------------------------------------------- parse-error messages --
+# Issue: ijson's C parser embeds the raw byte context around an invalid-
+# UTF-8 failure directly into the exception's args as bytes, not str.
+# bytes.__str__ falls back to repr(), so a plain f"JSON parse error: {exc}"
+# leaked Python's internal repr syntax (b'...', literal backslash-n
+# escapes) into a user-facing warning for a genuinely mis-encoded file.
+
+@pytest.mark.asyncio
+async def test_invalid_encoding_error_message_has_no_bytes_repr_leak(tmp_path):
+    # cp1252-encoded accented characters are invalid UTF-8 continuation
+    # bytes -- ijson's C parser raises with the raw byte context embedded
+    # as bytes.
+    raw = '[{"id": 1, "note": "café"}]'.encode("cp1252")
+    path = tmp_path / "bad_encoding.json"
+    path.write_bytes(raw)
+
+    doc = await _parse(str(path))
+
+    assert doc.warnings, "expected a parse-error warning for invalid UTF-8"
+    message = doc.warnings[0]
+    assert not message.startswith("JSON parse error: b'")
+    assert "\\n" not in message  # no literal backslash-n escape sequences
+    assert "\\x" not in message  # no literal hex-escape sequences leaking through
