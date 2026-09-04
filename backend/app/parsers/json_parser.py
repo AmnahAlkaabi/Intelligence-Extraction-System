@@ -82,6 +82,40 @@ def _flatten_record(rec) -> dict:
     return _flatten(rec, prefix)
 
 
+def _unwrap_record_array(data) -> tuple[list, int]:
+    """A top-level JSON *object* is usually a single record -- but a very
+    common API/export convention instead wraps the actual list of records
+    under one key (`{"employees": [...]}`, `{"data": [...]}`,
+    `{"results": [...]}`). Treating the whole object as one record in that
+    case doesn't just mislabel it: _flatten_record recursively flattens
+    the wrapped array into per-index dotted-path columns
+    (employees[0].name, employees[1].name, ...) instead of one row per
+    record -- an unreadable single-row table, a schema catalog that only
+    ever sees index 0 (companies 1+ become unqueryable via chat SQL), and
+    -- worse -- NER/PII/Financial/Relation only ever see
+    json.dumps(whole_document)[:4000], silently truncating away whatever
+    records don't fit in the first 4000 characters with no warning, unlike
+    the explicit MAX_STRUCTURED_RECORDS-exceeded warning below.
+
+    Heuristic: if exactly one top-level key's value is a non-empty list of
+    dicts, unwrap it. Zero or multiple such keys are ambiguous -- e.g. a
+    single real record that happens to have one list-of-objects field
+    alongside genuinely scalar fields would be wrongly shattered into N
+    fake "records" that are actually just one record's sub-items, so those
+    cases are deliberately left as a single record rather than guessed at.
+    """
+    if not isinstance(data, dict):
+        return [data], 1
+    array_keys = [
+        key for key, value in data.items()
+        if isinstance(value, list) and value and all(isinstance(item, dict) for item in value)
+    ]
+    if len(array_keys) == 1:
+        records = data[array_keys[0]]
+        return records, len(records)
+    return [data], 1
+
+
 def _open_stripped_of_bom(file_path: str):
     """Binary file handle positioned just past a leading UTF-8 BOM, if
     present. ijson reads raw bytes -- handing it a text-mode reader works
@@ -236,8 +270,12 @@ class JSONParser(BaseParser):
                 else:
                     with open(file_path, encoding="utf-8-sig") as f:
                         data = json.load(f, object_pairs_hook=pairs_hook)
-                    records = [data]
-                    record_count = 1
+                    unwrapped, unwrapped_count = _unwrap_record_array(data)
+                    if unwrapped_count > MAX_STRUCTURED_RECORDS:
+                        records = unwrapped[:MAX_STRUCTURED_RECORDS]
+                    else:
+                        records = unwrapped
+                    record_count = unwrapped_count
 
             key_freq: dict[str, int] = {}
             flat_records: list[dict] = []
