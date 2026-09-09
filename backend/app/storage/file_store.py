@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import shutil
+import time
 import uuid
 from pathlib import Path
 
@@ -99,7 +100,33 @@ def write_job_state(job: Job) -> None:
     path = job_output_dir(job.job_id) / "job_state.json"
     tmp_path = path.with_suffix(path.suffix + f".tmp{uuid.uuid4().hex}")
     tmp_path.write_text(job.model_dump_json(), encoding="utf-8")
-    os.replace(tmp_path, path)
+    _replace_with_retry(tmp_path, path)
+
+
+def _replace_with_retry(tmp_path: Path, path: Path, attempts: int = 20) -> None:
+    """os.replace() is atomic and safe against two concurrent renames
+    landing on the same destination on POSIX -- the only OS this runs on
+    in production (air-gapped Linux containers, per this module's
+    docstring). On Windows, MoveFileEx (what os.replace uses under the
+    hood there) can raise a transient PermissionError/WinError 5 when
+    several renames race onto the same destination at once, because the
+    OS briefly holds the target exclusively during the syscall -- unlike
+    POSIX rename(2), which has no such window. A short retry-with-backoff
+    resolves it without weakening the atomicity guarantee: each attempt
+    is still a single os.replace call, so the file is never observed in a
+    partially-written state either way -- only unlinked on the final
+    failed attempt, so a permanently-stuck lock doesn't leave stray temp
+    files behind.
+    """
+    for attempt in range(attempts):
+        try:
+            os.replace(tmp_path, path)
+            return
+        except PermissionError:
+            if attempt == attempts - 1:
+                tmp_path.unlink(missing_ok=True)
+                raise
+            time.sleep(min(0.01 * (2 ** attempt), 0.5))
 
 
 def load_all_job_states() -> list[Job]:
