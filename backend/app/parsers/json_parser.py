@@ -316,7 +316,16 @@ class JSONParser(BaseParser):
                 )
 
             if records:
-                headers = list(key_freq.keys())[:20]
+                # By frequency, not first-seen order: for heterogeneous
+                # records (different keys per record), the first 20 keys
+                # encountered can all be one-off fields from early records
+                # while the single most common field across the whole file
+                # -- if it happens to first appear later -- gets silently
+                # excluded from both the preview table AND the structured
+                # SQL store (full_tables reuses these same headers below),
+                # even though it's correctly ranked #1 in the "Key
+                # frequency" summary above.
+                headers = [k for k, _ in sorted(key_freq.items(), key=lambda kv: -kv[1])[:20]]
                 preview_rows = [
                     [str(flat.get(h, "")) for h in headers]
                     for flat in flat_records[:MAX_PREVIEW_RECORDS]

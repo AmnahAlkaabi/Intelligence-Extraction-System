@@ -323,3 +323,25 @@ async def test_invalid_encoding_error_message_has_no_bytes_repr_leak(tmp_path):
     assert not message.startswith("JSON parse error: b'")
     assert "\\n" not in message  # no literal backslash-n escape sequences
     assert "\\x" not in message  # no literal hex-escape sequences leaking through
+
+
+# --------------------------------------------------- header column ordering --
+# Issue: table headers were the first 20 keys in first-seen order, not the
+# 20 most frequent. For heterogeneous records (different keys per record),
+# the single most common field could first appear after 20 other one-off
+# keys were already seen, silently excluding it from the preview table AND
+# the structured SQL store (full_tables reuses the same headers) -- while
+# the "Key frequency" text summary correctly ranked it #1.
+
+@pytest.mark.asyncio
+async def test_table_headers_prefer_frequent_keys_over_first_seen(tmp_path):
+    # 20 records each contributing one unique one-off key (20 distinct
+    # keys, all seen before "amount" ever appears), followed by 20 records
+    # that all share "amount" -- the single most frequent field overall.
+    records = [{f"junk_{i}": i} for i in range(20)]
+    records += [{"amount": i * 10} for i in range(20)]
+    path = _write(tmp_path, "heterogeneous.json", json.dumps(records))
+
+    doc = await _parse(path)
+
+    assert "amount" in doc.tables[0].headers
